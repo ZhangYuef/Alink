@@ -1,5 +1,6 @@
 package com.alibaba.alink.params.recommendation;
 
+import com.alibaba.alink.common.linalg.DenseVector;
 import com.alibaba.alink.params.shared.colname.HasFeatureColsDefaultAsNull;
 import com.alibaba.alink.params.shared.colname.HasLabelCol;
 import com.alibaba.alink.params.shared.colname.HasVectorColDefaultAsNull;
@@ -129,5 +130,42 @@ public interface DeepFmTrainParams<T> extends
     }
     default T setNumEpochs(Integer value) {
         return set(NUM_EPOCHS, value);
+    }
+
+    // deep part
+    ParamInfo<int[]> LAYERS = ParamInfoFactory
+            .createParamInfo("layers", int[].class)
+            .setDescription("Size of each neural network layer.")
+            .setRequired()
+            .build();
+    default int[] getLayers() {
+        return get(LAYERS);
+    }
+    default T setLayers(int[] value) {
+        return set(LAYERS, value);
+    }
+
+    ParamInfo<Integer> BLOCK_SIZE = ParamInfoFactory
+            .createParamInfo("blockSize", Integer.class)
+            .setDescription("Size for stacking training samples, the default value is 64.")
+            .setHasDefaultValue(64)
+            .build();
+    default Integer getBlockSize() {
+        return get(BLOCK_SIZE);
+    }
+    default T setBlockSize(Integer value) {
+        return set(BLOCK_SIZE, value);
+    }
+
+    ParamInfo<DenseVector> INITIAL_WEIGHTS = ParamInfoFactory
+            .createParamInfo("initialWeights", DenseVector.class)
+            .setDescription("Initial weights.")
+            .setHasDefaultValue(null)
+            .build();
+    default DenseVector getInitialWeights() {
+        return get(INITIAL_WEIGHTS);
+    }
+    default T setInitialWeights(DenseVector value) {
+        return set(INITIAL_WEIGHTS, value);
     }
 }
