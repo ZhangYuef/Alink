@@ -42,6 +42,7 @@ public class DeepFmTest {
                 .setInitStdev(0.01)
                 .setLearnRate(0.1)
                 .setEpsilon(0.0001)
+                .setLayers(new int[]{4, 5, 3})      // deep
                 .setPredictionCol("pred")
                 .setPredictionDetailCol("details")
                 .enableLazyPrintModelInfo();

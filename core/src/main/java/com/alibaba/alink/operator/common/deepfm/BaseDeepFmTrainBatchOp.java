@@ -17,13 +17,16 @@ import com.alibaba.alink.common.linalg.VectorUtil;
 import com.alibaba.alink.common.model.ModelParamName;
 import com.alibaba.alink.common.utils.TableUtil;
 import com.alibaba.alink.operator.batch.BatchOperator;
+import com.alibaba.alink.operator.common.classification.ann.Topology;
 import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp;
 import com.alibaba.alink.operator.common.deepfm.DeepFmModelDataConverter;
 import com.alibaba.alink.operator.common.deepfm.DeepFmModelInfo;
 import com.alibaba.alink.operator.common.deepfm.DeepFmModelInfoBatchOp;
 import com.alibaba.alink.params.recommendation.DeepFmTrainParams;
 
-import com.alibaba.alink.params.recommendation.FmTrainParams;
+// deep part
+import com.alibaba.alink.operator.common.classification.ann.FeedForwardTopology;
+
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.GroupReduceFunction;
@@ -81,10 +84,11 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
      */
     //TODO: implement in DeepFmtrainbatchOp
     protected abstract DataSet<BaseDeepFmTrainBatchOp.DeepFmDataFormat> optimize(DataSet<Tuple3<Double, Double, Vector>> trainData,
-                                                                         DataSet<Integer> vecSize,
-                                                                         final Params params,
-                                                                         final int[] dim,
-                                                                         MLEnvironment session);
+                                                                                 DataSet<Integer> vecSize,
+                                                                                 final Params params,
+                                                                                 final int[] dim,
+                                                                                 Topology topology,
+                                                                                 MLEnvironment session);
 
     /**
      * do the operation of this op.
@@ -106,6 +110,12 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         boolean isRegProc = Task.valueOf(params.get(ModelParamName.TASK).toUpperCase()).equals(Task.REGRESSION);
         this.labelType = isRegProc ? Types.DOUBLE : in.getColTypes()[TableUtil
                 .findColIndex(in.getColNames(), params.get(DeepFmTrainParams.LABEL_COL))];
+
+        // deep part params
+        final int[] layerSize = params.get(DeepFmTrainParams.LAYERS);
+        final int blockSize = params.get(DeepFmTrainParams.BLOCK_SIZE);
+        final DenseVector initalWeights = params.get(DeepFmTrainParams.INITIAL_WEIGHTS);
+        Topology topology = FeedForwardTopology.multiLayerPerceptron(layerSize, false);
 
         // Transform data to Tuple3 format <weight, label, feature vector>.
         DataSet<Tuple3<Double, Object, Vector>> initData = transform(in, params, isRegProc);
@@ -138,7 +148,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
                 trainData = transferLabel(initData, isRegProc, labelValues);
 
         DataSet<DeepFmDataFormat> model
-                = optimize(trainData, featSize, params, dim, MLEnvironmentFactory.get(getMLEnvironmentId()));
+                = optimize(trainData, featSize, params, dim, topology, MLEnvironmentFactory.get(getMLEnvironmentId()));
 
         DataSet<Row> modelRows = model.flatMap(new GenerateModelRows(params, dim, labelType, isRegProc))
                 .withBroadcastSet(labelValues, LABEL_VALUES)
@@ -308,10 +318,10 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         public void flatMap(DeepFmDataFormat value, Collector<Row> out) throws Exception {
             DeepFmModelData modelData = new DeepFmModelData();
             modelData.deepFmModel = value;
-            modelData.vectorColName = params.get(FmTrainParams.VECTOR_COL);
-            modelData.featureColNames = params.get(FmTrainParams.FEATURE_COLS);
+            modelData.vectorColName = params.get(DeepFmTrainParams.VECTOR_COL);
+            modelData.featureColNames = params.get(DeepFmTrainParams.FEATURE_COLS);
             modelData.dim = dim;
-            modelData.labelColName = params.get(FmTrainParams.LABEL_COL);
+            modelData.labelColName = params.get(DeepFmTrainParams.LABEL_COL);
             modelData.task = Task.valueOf(params.get(ModelParamName.TASK).toUpperCase());
             if (fieldPos != null) {
                 modelData.fieldPos = fieldPos;

@@ -18,17 +18,16 @@ import com.alibaba.alink.common.linalg.SparseVector;
 import com.alibaba.alink.common.linalg.Vector;
 import com.alibaba.alink.common.model.ModelParamName;
 import com.alibaba.alink.common.utils.JsonConverter;
+import com.alibaba.alink.operator.common.classification.ann.Topology;
 import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp;
 import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp.DeepFmDataFormat;
 import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp.LogitLoss;
 import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp.LossFunction;
 import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp.SquareLoss;
 import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp.Task;
-import com.alibaba.alink.operator.common.fm.BaseFmTrainBatchOp;
 import com.alibaba.alink.operator.common.optim.subfunc.OptimVariable;
 import com.alibaba.alink.params.recommendation.DeepFmTrainParams;
 
-import com.alibaba.alink.params.recommendation.FmTrainParams;
 import com.alibaba.alink.pipeline.classification.DeepFmModel;
 import org.apache.flink.api.common.functions.RichMapPartitionFunction;
 import org.apache.flink.api.java.DataSet;
@@ -44,20 +43,25 @@ import org.apache.flink.util.Collector;
 public class DeepFmOptimizer {
     private Params params;
     private DataSet<Tuple3<Double, Double, Vector>> trainData;
+    private Topology topology;
     private int[] dim;
     protected DataSet<DeepFmDataFormat> deepFmModel = null;
     private double[] lambda;
+    protected DataSet<DenseVector> coefVec = null;
+
 
     /**
      * construct function.
      *
      * @param trainData train data.
+     * @param topology  network topology for multi-layer perceptions
      * @param params    parameters for optimizer.
      */
-    public DeepFmOptimizer(DataSet<Tuple3<Double, Double, Vector>> trainData, Params params) {
+    public DeepFmOptimizer(DataSet<Tuple3<Double, Double, Vector>> trainData, Topology topology, Params params) {
         this.params = params;
         this.trainData = trainData;
-
+        this.topology = topology;
+        
         this.dim = new int[3];
         dim[0] = params.get(DeepFmTrainParams.WITH_INTERCEPT) ? 1 : 0;
         dim[1] = params.get(DeepFmTrainParams.WITH_LINEAR_ITEM) ? 1 : 0;
@@ -77,11 +81,23 @@ public class DeepFmOptimizer {
     }
 
     /**
+     *
+     * initialize multi-layer perception part
+     */
+    public void setWithInitMlpWeights(DataSet<DenseVector> initCoef) {
+        this.coefVec = initCoef;
+    }
+
+    /**
      * optimize DeepFm problem.
      *
      * @return DeepFm model.
      */
     public DataSet<DeepFmDataFormat> optimize() {
+        if (null == this.coefVec) {
+            throw new RuntimeException("Coefficients vector is not initialized.");
+        }
+
         DataSet<Row> model = new IterativeComQueue()
                 .initWithPartitionedData(OptimVariable.deepFmTrainData, trainData)
                 .initWithBroadcastData(OptimVariable.deepFmModel, deepFmModel)
