@@ -15,7 +15,7 @@ import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.ml.api.misc.param.Params;
 
 /**
- * Fm model converter. This converter can help serialize and deserialize the model data.
+ * DeepFm model converter. This converter can help serialize and deserialize the model data.
  */
 public class DeepFmModelDataConverter extends LabeledModelDataConverter<DeepFmModelData, DeepFmModelData> {
 

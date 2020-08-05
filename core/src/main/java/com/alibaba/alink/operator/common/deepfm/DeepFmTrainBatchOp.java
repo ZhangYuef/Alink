@@ -62,61 +62,32 @@ public class DeepFmTrainBatchOp<T extends DeepFmTrainBatchOp<T>> extends BaseDee
                                                  final Topology topology,
                                                  MLEnvironment session) {
         final double initStdev = params.get(DeepFmTrainParams.INIT_STDEV);
+        final int[] layerSize = params.get(DeepFmTrainParams.LAYERS);
         final DenseVector initialWeights = params.get(DeepFmTrainParams.INITIAL_WEIGHTS);
 
-        DataSet<DeepFmDataFormat> initFactors = initFactorsModel(vecSize, dim, initStdev);
-        DataSet<DenseVector> initMlpWeights = initMlpModel(trainData, topology, initialWeights);
+        DataSet<DeepFmDataFormat> initFactors = initDeepFmModel(vecSize, dim, layerSize, initialWeights,initStdev);
 
         DeepFmOptimizer optimizer = new DeepFmOptimizer(trainData, topology, params);
         optimizer.setWithInitFactors(initFactors);
-        optimizer.setWithInitMlpWeights(initMlpWeights);
 
         return optimizer.optimize();
     }
 
-    private DataSet<DeepFmDataFormat> initFactorsModel(DataSet<Integer> vecSize, int[] dim,double initStdev) {
+    private DataSet<DeepFmDataFormat> initDeepFmModel(DataSet<Integer> vecSize,
+                                                      int[] dim,
+                                                      int[] layerSize,
+                                                      DenseVector initialWeights,
+                                                      double initStdev) {
         // TODO: does this need getExecutionEnvironmentFromDataSets explicitly?
         return vecSize.map(new RichMapFunction<Integer, DeepFmDataFormat>() {
             private static final long serialVersionUID = 5898149131657343503L;
 
             @Override
             public DeepFmDataFormat map(Integer value) throws Exception {
-                DeepFmDataFormat innerModel = new DeepFmDataFormat(value, dim, initStdev);
+                DeepFmDataFormat innerModel = new DeepFmDataFormat(value, dim, layerSize, initialWeights, initStdev);
 
                 return innerModel;
             }
         });
     }
-
-    private DataSet<DenseVector> initMlpModel(DataSet<?> inputRel, Topology topology, DenseVector initialWeights) {
-        if (initialWeights != null) {
-            if (initialWeights.size() != topology.getWeightSize()) {
-                throw new RuntimeException("Invalid initial weights, size mismatch");
-            }
-            return BatchOperator.getExecutionEnvironmentFromDataSets(inputRel).fromElements(this.initialWeights);
-        } else {
-            return BatchOperator.getExecutionEnvironmentFromDataSets(inputRel).fromElements(0)
-                    .map(new RichMapFunction<Integer, DenseVector>() {
-                        final double initStdev = 0.05;
-                        final long seed = 1L;
-                        transient Random random;
-
-                        @Override
-                        public void open(Configuration parameters) throws Exception {
-                            random = new Random(seed);
-                        }
-
-                        @Override
-                        public DenseVector map(Integer value) throws Exception {
-                            DenseVector weights = DenseVector.zeros(topology.getWeightSize());
-                            for (int i = 0; i < weights.size(); i++) {
-                                weights.set(i, random.nextGaussian() * initStdev);
-                            }
-                            return weights;
-                        }
-                    })
-                    .name("init_weights");
-        }
-    }
-
 }

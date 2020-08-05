@@ -18,6 +18,7 @@ import com.alibaba.alink.common.model.ModelParamName;
 import com.alibaba.alink.common.utils.TableUtil;
 import com.alibaba.alink.operator.batch.BatchOperator;
 import com.alibaba.alink.operator.common.classification.ann.Topology;
+import com.alibaba.alink.operator.common.classification.ann.TopologyModel;
 import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp;
 import com.alibaba.alink.operator.common.deepfm.DeepFmModelDataConverter;
 import com.alibaba.alink.operator.common.deepfm.DeepFmModelInfo;
@@ -27,12 +28,7 @@ import com.alibaba.alink.params.recommendation.DeepFmTrainParams;
 // deep part
 import com.alibaba.alink.operator.common.classification.ann.FeedForwardTopology;
 
-import org.apache.flink.api.common.functions.FilterFunction;
-import org.apache.flink.api.common.functions.FlatMapFunction;
-import org.apache.flink.api.common.functions.GroupReduceFunction;
-import org.apache.flink.api.common.functions.MapFunction;
-import org.apache.flink.api.common.functions.RichFlatMapFunction;
-import org.apache.flink.api.common.functions.RichMapPartitionFunction;
+import org.apache.flink.api.common.functions.*;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.DataSet;
@@ -99,6 +95,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
     @Override
     public T linkFrom(BatchOperator<?>... inputs) {
         BatchOperator<?> in = checkAndGetFirst(inputs);
+
         // Get parameters of this algorithm.
         Params params = getParams();
 
@@ -114,7 +111,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         // deep part params
         final int[] layerSize = params.get(DeepFmTrainParams.LAYERS);
         final int blockSize = params.get(DeepFmTrainParams.BLOCK_SIZE);
-        final DenseVector initalWeights = params.get(DeepFmTrainParams.INITIAL_WEIGHTS);
+//        final DenseVector initalWeights = params.get(DeepFmTrainParams.INITIAL_WEIGHTS);
         Topology topology = FeedForwardTopology.multiLayerPerceptron(layerSize, false);
 
         // Transform data to Tuple3 format <weight, label, feature vector>.
@@ -165,6 +162,8 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
      * @param isRegProc   train process is regression or classification.
      * @param labelValues label values.
      * @return data for DeepFM training.
+     * <Double, Double, Vector>: <weight, label, feature vector>,
+     * for classification label is 0.0/1.0, for regression is Double number
      */
     private static DataSet<Tuple3<Double, Double, Vector>> transferLabel(
             DataSet<Tuple3<Double, Object, Vector>> initData,
@@ -323,6 +322,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             modelData.dim = dim;
             modelData.labelColName = params.get(DeepFmTrainParams.LABEL_COL);
             modelData.task = Task.valueOf(params.get(ModelParamName.TASK).toUpperCase());
+//            modelData.coefVector =
             if (fieldPos != null) {
                 modelData.fieldPos = fieldPos;
             }
@@ -516,7 +516,6 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         }
     }
 
-
     /**
      * the data structure of DeepFM model data.
      */
@@ -525,6 +524,10 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         public double[][] factors;
         public double bias;
         public int[] dim;
+        public Topology topology;
+        public TopologyModel topologyModel = null;
+        public DenseVector initialWeights;
+        public DenseVector coefVector;
 
         // empty constructor to make it POJO
         public DeepFmDataFormat() {
@@ -538,7 +541,20 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             if (dim[2] > 0) {
                 this.factors = new double[vecSize][dim[2]];
             }
-            reset(initStdev);
+            reset(initStdev, false);
+        }
+
+        public DeepFmDataFormat(int vecSize, int[] dim, int[] layerSize, DenseVector initialWeights, double initStdev) {
+            this.dim = dim;
+            if (dim[1] > 0) {
+                this.linearItems = new double[vecSize];
+            }
+            if (dim[2] > 0) {
+                this.factors = new double[vecSize][dim[2]];
+            }
+            this.initialWeights = initialWeights;
+            this.topology = FeedForwardTopology.multiLayerPerceptron(layerSize, false);;
+            reset(initStdev, true);
         }
 
         public DeepFmDataFormat(int vecSize, int numField, int[] dim, double initStdev) {
@@ -549,11 +565,13 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             if (dim[2] > 0) {
                 this.factors = new double[vecSize * numField][dim[2]];
             }
-            reset(initStdev);
+            reset(initStdev, false);
         }
 
-        public void reset(double initStdev) {
+        public void reset(double initStdev, boolean useDeep) {
             Random rand = new Random(2020);
+
+            // FM part
             if (dim[1] > 0) {
                 for (int i = 0; i < linearItems.length; ++i) {
                     linearItems[i] = rand.nextGaussian() * initStdev;
@@ -564,6 +582,22 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
                     for (int j = 0; j < dim[2]; ++j) {
                         factors[i][j] = rand.nextGaussian() * initStdev;
                     }
+                }
+            }
+
+            // deep part
+            if(useDeep) {
+                if (initialWeights != null) {
+                    if (initialWeights.size() != topology.getWeightSize()) {
+                        throw new RuntimeException("Invalid initial weights, size mismatch");
+                    }
+                    topologyModel = topology.getModel(initialWeights);
+                } else {
+                    DenseVector weights = DenseVector.zeros(topology.getWeightSize());
+                    for (int i = 0; i < weights.size(); i++) {
+                        weights.set(i, rand.nextGaussian() * initStdev);
+                    }
+                    topologyModel = topology.getModel(weights);
                 }
             }
         }

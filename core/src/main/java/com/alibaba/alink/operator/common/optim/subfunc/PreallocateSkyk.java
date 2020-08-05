@@ -18,7 +18,7 @@ public class PreallocateSkyk extends ComputeFunction {
     }
 
     /**
-     * prepare hessian matrix of lbfgs method. we allocate memory fo sK, yK at first iteration step.
+     * prepare hessian matrix of lbfgs method. we allocate memory for sK, yK at first iteration step.
      *
      * @param context context of iteration.
      */

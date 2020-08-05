@@ -25,7 +25,6 @@ public class OptimVariable {
 
     public final static String fmTrainData = "fmTrainData";
     public final static String fmModel = "fmModel";
-    // TODO: what is sigmaGii?
     public final static String sigmaGii = "sigmaGii";
     public final static String weights = "weights";
     public final static String factorAllReduce = "factorAllReduce";

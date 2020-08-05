@@ -23,7 +23,7 @@ public interface MultilayerPerceptronTrainParams<T> extends
 
     ParamInfo<int[]> LAYERS = ParamInfoFactory
         .createParamInfo("layers", int[].class)
-        .setDescription("Size of each neural network layers.")
+        .setDescription("Size of each neural network layer.")
         .setRequired()
         .build();
     ParamInfo<Integer> BLOCK_SIZE = ParamInfoFactory

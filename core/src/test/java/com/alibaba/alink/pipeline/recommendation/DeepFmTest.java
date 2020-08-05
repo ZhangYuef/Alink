@@ -13,6 +13,8 @@ import com.alibaba.alink.operator.common.deepfm.DeepFmPredictBatchOp;
 import com.alibaba.alink.pipeline.classification.DeepFmClassifier;
 import com.alibaba.alink.pipeline.classification.DeepFmModel;
 
+// deep part
+
 //TODO: add DeepFm regression
 //import com.alibaba.alink.pipeline.regression.FmRegressor;
 

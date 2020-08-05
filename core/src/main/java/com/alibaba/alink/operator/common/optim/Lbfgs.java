@@ -144,8 +144,8 @@ public class Lbfgs extends Optimizer {
 				yK[(k - 1) % m].minusEqual(oldGradient);
 				oldGradient.setEqual(grad.f0);
 			}
-			// copy g_k and store in qL
 
+			// copy g_k and store in qL
 			dir.f0.setEqual(grad.f0);
 
 			// compute H^-1 * g_k

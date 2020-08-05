@@ -20,6 +20,7 @@ public class FeedForwardTopology extends Topology {
 
     public static FeedForwardTopology multiLayerPerceptron(int[] layerSize, boolean softmaxOnTop) {
         List<Layer> layers = new ArrayList<>((layerSize.length - 1) * 2);
+
         for (int i = 0; i < layerSize.length - 1; i++) {
             layers.add(new AffineLayer(layerSize[i], layerSize[i + 1]));
             if (i == layerSize.length - 2) {
