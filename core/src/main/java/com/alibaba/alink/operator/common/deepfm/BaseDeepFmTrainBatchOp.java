@@ -83,7 +83,6 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
                                                                                  DataSet<Integer> vecSize,
                                                                                  final Params params,
                                                                                  final int[] dim,
-                                                                                 Topology topology,
                                                                                  MLEnvironment session);
 
     /**
@@ -111,8 +110,6 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         // deep part params
         final int[] layerSize = params.get(DeepFmTrainParams.LAYERS);
         final int blockSize = params.get(DeepFmTrainParams.BLOCK_SIZE);
-//        final DenseVector initalWeights = params.get(DeepFmTrainParams.INITIAL_WEIGHTS);
-        Topology topology = FeedForwardTopology.multiLayerPerceptron(layerSize, false);
 
         // Transform data to Tuple3 format <weight, label, feature vector>.
         DataSet<Tuple3<Double, Object, Vector>> initData = transform(in, params, isRegProc);
@@ -145,7 +142,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
                 trainData = transferLabel(initData, isRegProc, labelValues);
 
         DataSet<DeepFmDataFormat> model
-                = optimize(trainData, featSize, params, dim, topology, MLEnvironmentFactory.get(getMLEnvironmentId()));
+                = optimize(trainData, featSize, params, dim, MLEnvironmentFactory.get(getMLEnvironmentId()));
 
         DataSet<Row> modelRows = model.flatMap(new GenerateModelRows(params, dim, labelType, isRegProc))
                 .withBroadcastSet(labelValues, LABEL_VALUES)

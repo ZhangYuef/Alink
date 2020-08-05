@@ -59,7 +59,6 @@ public class DeepFmTrainBatchOp<T extends DeepFmTrainBatchOp<T>> extends BaseDee
                                                  DataSet<Integer> vecSize,
                                                  final Params params,
                                                  final int[] dim,
-                                                 final Topology topology,
                                                  MLEnvironment session) {
         final double initStdev = params.get(DeepFmTrainParams.INIT_STDEV);
         final int[] layerSize = params.get(DeepFmTrainParams.LAYERS);
@@ -67,7 +66,7 @@ public class DeepFmTrainBatchOp<T extends DeepFmTrainBatchOp<T>> extends BaseDee
 
         DataSet<DeepFmDataFormat> initFactors = initDeepFmModel(vecSize, dim, layerSize, initialWeights,initStdev);
 
-        DeepFmOptimizer optimizer = new DeepFmOptimizer(trainData, topology, params);
+        DeepFmOptimizer optimizer = new DeepFmOptimizer(trainData, params);
         optimizer.setWithInitFactors(initFactors);
 
         return optimizer.optimize();

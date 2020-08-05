@@ -58,11 +58,10 @@ public class DeepFmOptimizer {
      * @param topology  network topology for multi-layer perceptions
      * @param params    parameters for optimizer.
      */
-    public DeepFmOptimizer(DataSet<Tuple3<Double, Double, Vector>> trainData, Topology topology, Params params) {
+    public DeepFmOptimizer(DataSet<Tuple3<Double, Double, Vector>> trainData,  Params params) {
         this.params = params;
         this.trainData = trainData;
-        this.topology = topology;
-        
+
         this.dim = new int[3];
         dim[0] = params.get(DeepFmTrainParams.WITH_INTERCEPT) ? 1 : 0;
         dim[1] = params.get(DeepFmTrainParams.WITH_LINEAR_ITEM) ? 1 : 0;
@@ -93,7 +92,7 @@ public class DeepFmOptimizer {
                 .add(new UpdateLocalModel(dim, lambda, params))
                 .add(new AllReduce(OptimVariable.factorAllReduce))  //TODO: advise
                 .add(new UpdateGlobalModel(dim))
-                .add(new CalcLossAndEvaluation(dim, params.get(ModelParamName.TASK), topology))
+                .add(new CalcLossAndEvaluation(dim, params.get(ModelParamName.TASK)))
                 .add(new AllReduce(OptimVariable.lossAucAllReduce))  // TODO: advise
                 .setCompareCriterionOfNode0(new deepFmIterTermination(params))
                 .closeWith(new OutputDeepFmModel())
@@ -172,7 +171,7 @@ public class DeepFmOptimizer {
         private Topology topology;
         private transient TopologyModel topologyModel = null;
 
-        public CalcLossAndEvaluation(int[] dim, String task, Topology topology) {
+        public CalcLossAndEvaluation(int[] dim, String task) {
             this.dim = dim;
             this.task = Task.valueOf(task.toUpperCase());
             if (task.equals(Task.REGRESSION)) {
@@ -186,8 +185,6 @@ public class DeepFmOptimizer {
             } else {
                 lossFunc = new LogitLoss();
             }
-
-            this.topology = topology;
         }
 
         @Override
