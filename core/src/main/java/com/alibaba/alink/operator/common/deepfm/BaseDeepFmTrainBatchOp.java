@@ -114,7 +114,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         // Transform data to Tuple3 format <weight, label, feature vector>.
         DataSet<Tuple3<Double, Object, Vector>> initData = transform(in, params, isRegProc);
 
-        // Get some util info, such as featureSize and labelValues.
+        // Get some util info, (label values, feature size)
         DataSet<Tuple2<Object[], Integer>> utilInfo = getUtilInfo(initData, isRegProc);
         DataSet<Integer> featSize = utilInfo.map(
                 new MapFunction<Tuple2<Object[], Integer>, Integer>() {
@@ -137,16 +137,14 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
                         out.collect(value.f0);
                     }
                 });
-
-        DataSet<Tuple3<Double, Double, Vector>>
-                trainData = transferLabel(initData, isRegProc, labelValues);
-
-        DataSet<DeepFmDataFormat> model
-                = optimize(trainData, featSize, params, dim, MLEnvironmentFactory.get(getMLEnvironmentId()));
+        // <weight, label, features>
+        DataSet<Tuple3<Double, Double, Vector>> trainData = transferLabel(initData, isRegProc, labelValues);
+        DataSet<DeepFmDataFormat> model = optimize(trainData, featSize, params, dim,
+                                                   MLEnvironmentFactory.get(getMLEnvironmentId()));
 
         DataSet<Row> modelRows = model.flatMap(new GenerateModelRows(params, dim, labelType, isRegProc))
-                .withBroadcastSet(labelValues, LABEL_VALUES)
-                .withBroadcastSet(featSize, VEC_SIZE);
+                                      .withBroadcastSet(labelValues, LABEL_VALUES)
+                                      .withBroadcastSet(featSize, VEC_SIZE);
 
         this.setOutput(modelRows, new DeepFmModelDataConverter(labelType).getModelSchema());
         return (T)this;
@@ -158,8 +156,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
      * @param initData    initial data.
      * @param isRegProc   train process is regression or classification.
      * @param labelValues label values.
-     * @return data for DeepFM training.
-     * <Double, Double, Vector>: <weight, label, feature vector>,
+     * @return data for DeepFM training (weight, label, feature vector),
      * for classification label is 0.0/1.0, for regression is Double number
      */
     private static DataSet<Tuple3<Double, Double, Vector>> transferLabel(
@@ -168,8 +165,8 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             DataSet<Object[]> labelValues) {
         return initData.mapPartition(
                 new RichMapPartitionFunction<Tuple3<Double, Object, Vector>, Tuple3<Double, Double, Vector>>() {
-
                     private static final long serialVersionUID = 7503654006872839366L;
+
                     private Object[] labelValues = null;
 
                     @Override
@@ -203,9 +200,10 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
      * @param params train parameters.
      * @return Tuple3 format train data <weight, label, vector></>.
      */
-    private DataSet<Tuple3<Double, Object, Vector>> transform(BatchOperator in,
-                                                              Params params,
-                                                              boolean isRegProc) {
+    private DataSet<Tuple3<Double, Object, Vector>> transform(
+            BatchOperator in,
+            Params params,
+            boolean isRegProc) {
         String[] featureColNames = params.get(DeepFmTrainParams.FEATURE_COLS);
         String labelName = params.get(DeepFmTrainParams.LABEL_COL);
         String weightColName = params.get(DeepFmTrainParams.WEIGHT_COL);
@@ -235,16 +233,15 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
 
 
     /**
-     * @param initData  get some useful info from initial data.
+     * @param initData  (weight, object(index, label), vector), feature vector> get some useful info from initial data.
      * @param isRegProc train process is regression or classification.
-     * @return useful data, including label values and vector size.
+     * @return useful data, including label values and vector size which represents for the largest index.
      */
     private static DataSet<Tuple2<Object[], Integer>> getUtilInfo(
             DataSet<Tuple3<Double, Object, Vector>> initData,
             boolean isRegProc) {
         return initData.filter(
                 new FilterFunction<Tuple3<Double, Object, Vector>>() {
-
                     private static final long serialVersionUID = -8853068410321180715L;
 
                     @Override
@@ -268,13 +265,11 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
                         int size = -1;
                         Set<Object> labelValues = new HashSet<>();
                         for (Tuple3<Double, Object, Vector> value : values) {
-                            Tuple2<Integer, Object[]>
-                                    labelVals = (Tuple2<Integer, Object[]>)value.f1;
+                            Tuple2<Integer, Object[]> labelVals = (Tuple2<Integer, Object[]>)value.f1;
                             for (int i = 0; i < labelVals.f1.length; ++i) {
                                 labelValues.add(labelVals.f1[i]);
                             }
                             size = Math.max(size, labelVals.f0);
-
                         }
                         Object[] labelssort = isRegProc ? labelValues.toArray() : orderLabels(labelValues);
                         out.collect(Tuple2.of(labelssort, size));
@@ -339,7 +334,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
      * only classification problem need do this process.
      *
      * @param unorderedLabelRows unordered label rows
-     * @return
+     * @return sorted labels in decending lexicographical order
      */
     protected static Object[] orderLabels(Iterable<Object> unorderedLabelRows) {
         List<Object> tmpArr = new ArrayList<>();
@@ -347,7 +342,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             tmpArr.add(row);
         }
         Object[] labels = tmpArr.toArray(new Object[0]);
-        Preconditions.checkState((labels.length == 2), "labels count should be 2 in 2 classification algo.");
+        Preconditions.checkState((labels.length == 2), "labels count should be 2 in 2-class classification algorithm.");
         String str0 = labels[0].toString();
         String str1 = labels[1].toString();
         String positiveLabelValueString = (str1.compareTo(str0) > 0) ? str1 : str0;
@@ -530,6 +525,12 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         public DeepFmDataFormat() {
         }
 
+        /**
+         *
+         * @param vecSize   input feature's max dimension
+         * @param dim       dim[0]-with interception, dim[1]-with linear item, dim[2]-factor number
+         * @param initStdev initial standard deviation for Gausssain distribution.
+         */
         public DeepFmDataFormat(int vecSize, int[] dim, double initStdev) {
             this.dim = dim;
             if (dim[1] > 0) {
@@ -541,6 +542,14 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             reset(initStdev, false);
         }
 
+        /**
+         *
+         * @param vecSize         input feature's max dimension
+         * @param dim             dim[0]-with interception, dim[1]-with linear item, dim[2]-factor number
+         * @param layerSize       each layers' size in MLP
+         * @param initialWeights  initial weights for MLP
+         * @param initStdev       initial standard deviation for Gausssain distribution.
+         */
         public DeepFmDataFormat(int vecSize, int[] dim, int[] layerSize, DenseVector initialWeights, double initStdev) {
             this.dim = dim;
             if (dim[1] > 0) {
@@ -550,10 +559,26 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
                 this.factors = new double[vecSize][dim[2]];
             }
             this.initialWeights = initialWeights;
-            this.topology = FeedForwardTopology.multiLayerPerceptron(layerSize, false);;
+
+            // insert as the first layer's input size
+            int inputSize = vecSize * dim[2];
+            int[] layerSizeInsert = new int[layerSize.length + 1];
+            layerSizeInsert[0] = inputSize;
+            for (int i = 0; i < layerSize.length; i++) {
+                layerSizeInsert[i + 1] = layerSize[i];
+            }
+
+            this.topology = FeedForwardTopology.multiLayerPerceptron(layerSizeInsert, false);
             reset(initStdev, true);
         }
 
+        /**
+         *
+         * @param vecSize         input feature's max dimension
+         * @param numField        field number
+         * @param dim             dim[0]-with interception, dim[1]-with linear item, dim[2]-factor number
+         * @param initStdev       initial standard deviation for Gausssain distribution.
+         */
         public DeepFmDataFormat(int vecSize, int numField, int[] dim, double initStdev) {
             this.dim = dim;
             if (dim[1] > 0) {
@@ -565,6 +590,11 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             reset(initStdev, false);
         }
 
+        /**
+         *
+         * @param initStdev initial standard deviation for Gausssain distribution.
+         * @param useDeep use deep (MLP) part or not.
+         */
         public void reset(double initStdev, boolean useDeep) {
             Random rand = new Random(2020);
 
@@ -588,13 +618,15 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
                     if (initialWeights.size() != topology.getWeightSize()) {
                         throw new RuntimeException("Invalid initial weights, size mismatch");
                     }
+                    coefVector = initialWeights;
                     topologyModel = topology.getModel(initialWeights);
                 } else {
                     DenseVector weights = DenseVector.zeros(topology.getWeightSize());
                     for (int i = 0; i < weights.size(); i++) {
                         weights.set(i, rand.nextGaussian() * initStdev);
                     }
-                    topologyModel = topology.getModel(weights);
+                    coefVector = weights;
+                    topologyModel = topology.getModel(coefVector);
                 }
             }
         }

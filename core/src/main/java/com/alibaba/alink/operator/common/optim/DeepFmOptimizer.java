@@ -577,4 +577,21 @@ public class DeepFmOptimizer {
         return Tuple2.of(y, vx);
     }
 
+    public static DenseVector deepCalcY(DeepFmDataFormat deepFmModel, int[] dim) {
+        // convert and concatenate embeddings into 1 dimension
+        int vecSize = deepFmModel.factors.length;
+        DenseVector input = new DenseVector(vecSize * dim[2]);
+        for (int i = 0; i < vecSize; i++) {
+            for (int j = 0; j < dim[2]; j++) {
+                input.set(i * dim[2] + j, deepFmModel.factors[i][j]);
+            }
+        }
+
+
+        TopologyModel topologyModel = deepFmModel.topologyModel;
+        DenseVector output = topologyModel.predict(input);
+
+        return output;
+    }
+
 }

@@ -41,10 +41,11 @@ public class DeepFmTest {
                 .setVectorCol("vec")
                 .setLabelCol("label")
                 .setNumEpochs(10)
+                .setNumFactor(5)
                 .setInitStdev(0.01)
                 .setLearnRate(0.1)
                 .setEpsilon(0.0001)
-                .setLayers(new int[]{4, 5, 3})      // deep
+                .setLayers(new int[]{6, 5, 4})      // hidden layers' sizes
                 .setPredictionCol("pred")
                 .setPredictionDetailCol("details")
                 .enableLazyPrintModelInfo();
