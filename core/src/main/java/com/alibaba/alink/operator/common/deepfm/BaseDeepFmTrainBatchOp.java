@@ -23,6 +23,8 @@ import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp;
 import com.alibaba.alink.operator.common.deepfm.DeepFmModelDataConverter;
 import com.alibaba.alink.operator.common.deepfm.DeepFmModelInfo;
 import com.alibaba.alink.operator.common.deepfm.DeepFmModelInfoBatchOp;
+import com.alibaba.alink.operator.common.optim.subfunc.OptimVariable;
+import com.alibaba.alink.operator.common.optim.subfunc.PreallocateVector;
 import com.alibaba.alink.params.recommendation.DeepFmTrainParams;
 
 // deep part
@@ -108,7 +110,6 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
                 .findColIndex(in.getColNames(), params.get(DeepFmTrainParams.LABEL_COL))];
 
         // deep part params
-        final int[] layerSize = params.get(DeepFmTrainParams.LAYERS);
         final int blockSize = params.get(DeepFmTrainParams.BLOCK_SIZE);
 
         // Transform data to Tuple3 format <weight, label, feature vector>.
@@ -518,8 +519,10 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         public int[] dim;
         public Topology topology;
         public TopologyModel topologyModel = null;
+        public int[] layerSize;
         public DenseVector initialWeights;
         public DenseVector coefVector;
+        public Tuple2<DenseVector, double[]> dir = null;
 
         // empty constructor to make it POJO
         public DeepFmDataFormat() {
@@ -560,13 +563,15 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             }
             this.initialWeights = initialWeights;
 
-            // insert as the first layer's input size
+            // insert vectorSize*factorSize as the first layer's input size, 1 as the final layer's output size
             int inputSize = vecSize * dim[2];
-            int[] layerSizeInsert = new int[layerSize.length + 1];
+            int[] layerSizeInsert = new int[layerSize.length + 2];
             layerSizeInsert[0] = inputSize;
             for (int i = 0; i < layerSize.length; i++) {
                 layerSizeInsert[i + 1] = layerSize[i];
             }
+            layerSizeInsert[layerSizeInsert.length - 1] = 1;
+            this.layerSize = layerSizeInsert;
 
             this.topology = FeedForwardTopology.multiLayerPerceptron(layerSizeInsert, false);
             reset(initStdev, true);
@@ -628,6 +633,9 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
                     coefVector = weights;
                     topologyModel = topology.getModel(coefVector);
                 }
+
+                DenseVector vec = new DenseVector(coefVector.size());
+                dir = Tuple2.of(vec, new double[2]);
             }
         }
     }

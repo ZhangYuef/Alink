@@ -2,7 +2,9 @@ package com.alibaba.alink.operator.common.classification.ann;
 
 import com.alibaba.alink.common.linalg.DenseMatrix;
 import com.alibaba.alink.common.linalg.DenseVector;
+import com.alibaba.alink.common.linalg.SparseVector;
 import com.alibaba.alink.common.linalg.Vector;
+import com.alibaba.alink.params.dataproc.SampleParams;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
 
@@ -46,7 +48,13 @@ public class Stacker implements Serializable {
 
     public Tuple2<DenseMatrix, DenseMatrix> unstack(Tuple3<Double, Double, Vector> labeledVector) {
         int batchSize = labeledVector.f0.intValue();
-        DenseVector stacked = (DenseVector) labeledVector.f2;
+        DenseVector stacked;
+        if (labeledVector.f2 instanceof SparseVector) {
+            stacked = ((SparseVector) labeledVector.f2).toDenseVector();
+        } else {
+            stacked = (DenseVector) labeledVector.f2;
+        }
+
         if (features == null || features.numRows() != batchSize) {
             features = new DenseMatrix(batchSize, inputSize);
         }
