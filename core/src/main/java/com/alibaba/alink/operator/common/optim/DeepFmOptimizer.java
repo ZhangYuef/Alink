@@ -16,6 +16,7 @@ import com.alibaba.alink.common.linalg.SparseVector;
 import com.alibaba.alink.common.linalg.Vector;
 import com.alibaba.alink.common.model.ModelParamName;
 import com.alibaba.alink.common.utils.JsonConverter;
+import com.alibaba.alink.operator.common.classification.ann.FeedForwardTopology;
 import com.alibaba.alink.operator.common.classification.ann.Stacker;
 import com.alibaba.alink.operator.common.classification.ann.Topology;
 import com.alibaba.alink.operator.common.classification.ann.TopologyModel;
@@ -47,7 +48,6 @@ public class DeepFmOptimizer {
     private int[] dim;
     protected DataSet<DeepFmDataFormat> deepFmModel = null;
     private double[] lambda;
-    private Topology topology;
 
     /**
      * construct function.
@@ -342,6 +342,8 @@ public class DeepFmOptimizer {
         private int batchSize;
         private LossFunction lossFunc = null;
         private Random rand = new Random(2020);
+        private Topology topology = null;
+        private TopologyModel topologyModel = null;
 
         private Stacker stacker = null;
 
@@ -447,7 +449,14 @@ public class DeepFmOptimizer {
                                    DeepFmDataFormat sigmaGii,
                                    double[] weights,
                                    Tuple2<DenseVector, double[]> grads) {
-            TopologyModel topologyModel = factors.topologyModel;
+            if (topology == null) {
+                topology = FeedForwardTopology.multiLayerPerceptron(factors.layerSize, false);
+            }
+            if (topologyModel == null) {
+                topologyModel = topology.getModel(factors.coefVector);
+            } else {
+                topologyModel.resetModel(factors.coefVector);
+            }
             double weightSum = 0.0;
             double loss = 0.0;
 
@@ -490,7 +499,6 @@ public class DeepFmOptimizer {
 
                     weights[idx] += sample.f0;
                     // update DeepFmModel
-                    // TODO: how to calc?
                     for (int j = 0; j < dim[2]; j++) {
                         double vixi = vals[i] * factors.factors[idx][j];
                         double d = vals[i] * (yVx.f1[j] - vixi);
@@ -635,7 +643,9 @@ public class DeepFmOptimizer {
             }
         }
 
-        TopologyModel topologyModel = deepFmModel.topologyModel;
+        Topology topology = FeedForwardTopology.multiLayerPerceptron(deepFmModel.layerSize, false);
+        TopologyModel topologyModel = topology.getModel(deepFmModel.coefVector);
+
         DenseVector output = topologyModel.predict(input);
 
         return output;

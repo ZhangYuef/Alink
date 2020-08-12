@@ -17,18 +17,9 @@ import com.alibaba.alink.common.linalg.VectorUtil;
 import com.alibaba.alink.common.model.ModelParamName;
 import com.alibaba.alink.common.utils.TableUtil;
 import com.alibaba.alink.operator.batch.BatchOperator;
-import com.alibaba.alink.operator.common.classification.ann.Topology;
-import com.alibaba.alink.operator.common.classification.ann.TopologyModel;
-import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp;
-import com.alibaba.alink.operator.common.deepfm.DeepFmModelDataConverter;
-import com.alibaba.alink.operator.common.deepfm.DeepFmModelInfo;
-import com.alibaba.alink.operator.common.deepfm.DeepFmModelInfoBatchOp;
-import com.alibaba.alink.operator.common.optim.subfunc.OptimVariable;
-import com.alibaba.alink.operator.common.optim.subfunc.PreallocateVector;
-import com.alibaba.alink.params.recommendation.DeepFmTrainParams;
-
-// deep part
 import com.alibaba.alink.operator.common.classification.ann.FeedForwardTopology;
+import com.alibaba.alink.operator.common.classification.ann.Topology;
+import com.alibaba.alink.params.recommendation.DeepFmTrainParams;
 
 import org.apache.flink.api.common.functions.*;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -315,7 +306,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             modelData.dim = dim;
             modelData.labelColName = params.get(DeepFmTrainParams.LABEL_COL);
             modelData.task = Task.valueOf(params.get(ModelParamName.TASK).toUpperCase());
-//            modelData.coefVector =
+
             if (fieldPos != null) {
                 modelData.fieldPos = fieldPos;
             }
@@ -517,8 +508,8 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         public double[][] factors;
         public double bias;
         public int[] dim;
-        public Topology topology;
-        public TopologyModel topologyModel = null;
+//        public Topology topology;
+//        public TopologyModel topologyModel = null;
         public int[] layerSize;
         public DenseVector initialWeights;
         public DenseVector coefVector;
@@ -542,7 +533,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             if (dim[2] > 0) {
                 this.factors = new double[vecSize][dim[2]];
             }
-            reset(initStdev, false);
+            reset(initStdev);
         }
 
         /**
@@ -573,8 +564,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             layerSizeInsert[layerSizeInsert.length - 1] = 1;
             this.layerSize = layerSizeInsert;
 
-            this.topology = FeedForwardTopology.multiLayerPerceptron(layerSizeInsert, false);
-            reset(initStdev, true);
+            reset(this.layerSize, initStdev);
         }
 
         /**
@@ -592,15 +582,36 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             if (dim[2] > 0) {
                 this.factors = new double[vecSize * numField][dim[2]];
             }
-            reset(initStdev, false);
+            reset(initStdev);
         }
 
         /**
-         *
-         * @param initStdev initial standard deviation for Gausssain distribution.
-         * @param useDeep use deep (MLP) part or not.
+         * Reset weight vectors for deepFM not including deep (MLP) part.
+         * @param initStdev initial standard deviation for Gaussian distribution.
          */
-        public void reset(double initStdev, boolean useDeep) {
+        public void reset(double initStdev) {
+            Random rand = new Random(2020);
+
+            // FM part
+            if (dim[1] > 0) {
+                for (int i = 0; i < linearItems.length; ++i) {
+                    linearItems[i] = rand.nextGaussian() * initStdev;
+                }
+            }
+            if (dim[2] > 0) {
+                for (int i = 0; i < factors.length; ++i) {
+                    for (int j = 0; j < dim[2]; ++j) {
+                        factors[i][j] = rand.nextGaussian() * initStdev;
+                    }
+                }
+            }
+        }
+
+        /**
+         * Reset weight vectors for deepFM including deep (MLP) part.
+         * @param initStdev initial standard deviation for Gaussian distribution.
+         */
+        public void reset(int[] layerSize, double initStdev) {
             Random rand = new Random(2020);
 
             // FM part
@@ -618,25 +629,25 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             }
 
             // deep part
-            if(useDeep) {
-                if (initialWeights != null) {
-                    if (initialWeights.size() != topology.getWeightSize()) {
-                        throw new RuntimeException("Invalid initial weights, size mismatch");
-                    }
-                    coefVector = initialWeights;
-                    topologyModel = topology.getModel(initialWeights);
-                } else {
-                    DenseVector weights = DenseVector.zeros(topology.getWeightSize());
-                    for (int i = 0; i < weights.size(); i++) {
-                        weights.set(i, rand.nextGaussian() * initStdev);
-                    }
-                    coefVector = weights;
-                    topologyModel = topology.getModel(coefVector);
-                }
+            Topology topology = FeedForwardTopology.multiLayerPerceptron(layerSize, false);
 
-                DenseVector vec = new DenseVector(coefVector.size());
-                dir = Tuple2.of(vec, new double[2]);
+            if (initialWeights != null) {
+                if (initialWeights.size() != topology.getWeightSize()) {
+                    throw new RuntimeException("Invalid initial weights, size mismatch");
+                }
+                coefVector = initialWeights;
+//                    topologyModel = topology.getModel(initialWeights);
+            } else {
+                DenseVector weights = DenseVector.zeros(topology.getWeightSize());
+                for (int i = 0; i < weights.size(); i++) {
+                    weights.set(i, rand.nextGaussian() * initStdev);
+                }
+                coefVector = weights;
+//                    topologyModel = topology.getModel(coefVector);
             }
+
+            DenseVector vec = new DenseVector(coefVector.size());
+            dir = Tuple2.of(vec, new double[2]);
         }
     }
 

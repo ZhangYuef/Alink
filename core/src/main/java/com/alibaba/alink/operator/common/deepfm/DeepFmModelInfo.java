@@ -55,8 +55,8 @@ public class DeepFmModelInfo {
     }
 
     /**
-     *
-     * @return the complete information of this model
+     * Get the complete information of this model.
+     * @return A string builder contains the information.
      */
     @Override
     public String toString() {

@@ -29,9 +29,9 @@ public class DeepFmModelDataConverter extends LabeledModelDataConverter<DeepFmMo
     }
 
     /**
-     *
+     * Serialize deepFM model data.
      * @param modelData The model data to serialize.
-     * @return
+     * @return The serialization result.
      */
     @Override
     protected Tuple3<Params, Iterable<String>, Iterable<Object>> serializeModel(DeepFmModelData modelData) {
@@ -51,11 +51,11 @@ public class DeepFmModelDataConverter extends LabeledModelDataConverter<DeepFmMo
     }
 
     /**
-     *
+     * Deserialize deepFM model data.
      * @param meta           The model meta data.
      * @param data           The model concrete data.
      * @param distinctLabels Distinct label values of training data.
-     * @return
+     * @return DeepFmModelData
      */
     @Override
     protected DeepFmModelData deserializeModel(Params meta, Iterable<String> data, Iterable<Object> distinctLabels) {

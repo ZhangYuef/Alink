@@ -5,12 +5,11 @@ import com.alibaba.alink.common.linalg.Vector;
 import com.alibaba.alink.common.mapper.RichModelMapper;
 import com.alibaba.alink.common.utils.JsonConverter;
 import com.alibaba.alink.common.utils.TableUtil;
-import com.alibaba.alink.operator.common.fm.BaseFmTrainBatchOp;
-import com.alibaba.alink.operator.common.fm.FmModelData;
-import com.alibaba.alink.operator.common.fm.FmModelDataConverter;
+import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp;
+import com.alibaba.alink.operator.common.deepfm.DeepFmModelDataConverter;
 
 import com.alibaba.alink.operator.common.linear.FeatureLabelUtil;
-import com.alibaba.alink.operator.common.optim.FmOptimizer;
+import com.alibaba.alink.operator.common.optim.DeepFmOptimizer;
 
 import com.alibaba.alink.params.classification.SoftmaxPredictParams;
 import org.apache.flink.api.java.tuple.Tuple2;
@@ -31,7 +30,7 @@ public class DeepFmModelMapper extends RichModelMapper {
     private int vectorColIndex = -1;
     private int[] featIdx = null;
     private int featLen = -1;
-    private FmModelData model;
+    private DeepFmModelData model;
     private int[] dim;
 
     public DeepFmModelMapper(TableSchema modelSchema, TableSchema dataSchema, Params params) {
@@ -46,9 +45,9 @@ public class DeepFmModelMapper extends RichModelMapper {
 
     @Override
     public void loadModel(List<Row> modelRows) {
-        FmModelDataConverter fmModelDataConverter
-                = new FmModelDataConverter(FmModelDataConverter.extractLabelType(super.getModelSchema()));
-        this.model = fmModelDataConverter.load(modelRows);
+        DeepFmModelDataConverter deepFmModelDataConverter
+                = new DeepFmModelDataConverter(DeepFmModelDataConverter.extractLabelType(super.getModelSchema()));
+        this.model = deepFmModelDataConverter.load(modelRows);
         this.dim = model.dim;
 
         if (vectorColIndex == -1) {
@@ -69,15 +68,14 @@ public class DeepFmModelMapper extends RichModelMapper {
 
     @Override
     protected Object predictResult(Row row) throws Exception {
-
         Vector vec = FeatureLabelUtil.getFeatureVector(row, false, featLen,
                 this.featIdx, this.vectorColIndex, model.vectorSize);
-        double y = FmOptimizer.calcY(vec, model.fmModel, dim).f0;
-        ;
+        double y = DeepFmOptimizer.fmCalcY(vec, model.deepFmModel, dim).f0 +
+                DeepFmOptimizer.deepCalcY(model.deepFmModel, dim).get(0);
 
-        if (model.task.equals(BaseFmTrainBatchOp.Task.REGRESSION)) {
+        if (model.task.equals(BaseDeepFmTrainBatchOp.Task.REGRESSION)) {
             return y;
-        } else if (model.task.equals(BaseFmTrainBatchOp.Task.BINARY_CLASSIFICATION)) {
+        } else if (model.task.equals(BaseDeepFmTrainBatchOp.Task.BINARY_CLASSIFICATION)) {
             y = logit(y);
             return (y <= 0.5 ? model.labelValues[1] : model.labelValues[0]);
         } else {
@@ -89,12 +87,13 @@ public class DeepFmModelMapper extends RichModelMapper {
     protected Tuple2<Object, String> predictResultDetail(Row row) throws Exception {
         Vector vec = FeatureLabelUtil.getFeatureVector(row, false, featLen,
                 featIdx, this.vectorColIndex, model.vectorSize);
-        double y = FmOptimizer.calcY(vec, model.fmModel, dim).f0;
+        double y = DeepFmOptimizer.fmCalcY(vec, model.deepFmModel, dim).f0 +
+                DeepFmOptimizer.deepCalcY(model.deepFmModel, dim).get(0);
 
-        if (model.task.equals(BaseFmTrainBatchOp.Task.REGRESSION)) {
+        if (model.task.equals(BaseDeepFmTrainBatchOp.Task.REGRESSION)) {
             String detail = String.format("{\"%s\":%f}", "label", y);
             return Tuple2.of(y, detail);
-        } else if (model.task.equals(BaseFmTrainBatchOp.Task.BINARY_CLASSIFICATION)) {
+        } else if (model.task.equals(BaseDeepFmTrainBatchOp.Task.BINARY_CLASSIFICATION)) {
             y = logit(y);
             Object label = (y <= 0.5 ? model.labelValues[1] : model.labelValues[0]);
             Map<String, String> detail = new HashMap<>(0);
@@ -109,7 +108,9 @@ public class DeepFmModelMapper extends RichModelMapper {
     }
 
     public double getY(SparseVector feature, boolean isBinCls) {
-        double y = FmOptimizer.calcY(feature, model.fmModel, dim).f0;
+        double y = DeepFmOptimizer.fmCalcY(feature, model.deepFmModel, dim).f0 +
+                DeepFmOptimizer.deepCalcY(model.deepFmModel, dim).get(0);
+
         if (isBinCls) {
             y = logit(y);
         }
@@ -120,7 +121,7 @@ public class DeepFmModelMapper extends RichModelMapper {
         return 1. / (1. + Math.exp(-x));
     }
 
-    public FmModelData getModel() {
+    public DeepFmModelData getModel() {
         return model;
     }
 }

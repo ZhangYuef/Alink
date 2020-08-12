@@ -24,7 +24,7 @@ public class DeepFmModelInfoBatchOp
 
     /**
      * construct function.
-     * @param params
+     * @param params - model parameters
      */
     public DeepFmModelInfoBatchOp(Params params) {
         super(params);

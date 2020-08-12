@@ -7,7 +7,7 @@ import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp.DeepFmDat
 import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp.Task;
 
 /**
- * DeepFM model data.
+ * DeepFM model data for {@link com.alibaba.alink.pipeline.classification.DeepFmClassifier}.
  */
 public class DeepFmModelData implements Serializable {
     private static final long serialVersionUID = 5575657492265170833L;
