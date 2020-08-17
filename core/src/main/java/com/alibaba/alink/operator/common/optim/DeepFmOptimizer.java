@@ -450,7 +450,7 @@ public class DeepFmOptimizer {
                                    double[] weights,
                                    Tuple2<DenseVector, double[]> grads) {
             if (topology == null) {
-                topology = FeedForwardTopology.multiLayerPerceptron(factors.layerSize, false);
+                topology = FeedForwardTopology.multiLayerPerceptron(factors.layerSize, false, factors.dropoutRate);
             }
             if (topologyModel == null) {
                 topologyModel = topology.getModel(factors.coefVector);
@@ -643,7 +643,8 @@ public class DeepFmOptimizer {
             }
         }
 
-        Topology topology = FeedForwardTopology.multiLayerPerceptron(deepFmModel.layerSize, false);
+        Topology topology = FeedForwardTopology.multiLayerPerceptron(deepFmModel.layerSize, false, deepFmModel.dropoutRate);
+
         TopologyModel topologyModel = topology.getModel(deepFmModel.coefVector);
 
         DenseVector output = topologyModel.predict(input);

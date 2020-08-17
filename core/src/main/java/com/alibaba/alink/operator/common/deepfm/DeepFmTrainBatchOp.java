@@ -23,7 +23,6 @@ import java.util.Random;
 public class DeepFmTrainBatchOp<T extends DeepFmTrainBatchOp<T>> extends BaseDeepFmTrainBatchOp<T> {
     private static final long serialVersionUID = -7121049631706290487L;
 
-    private DenseVector initialWeights;
     /**
      * construct function.
      *
@@ -63,8 +62,9 @@ public class DeepFmTrainBatchOp<T extends DeepFmTrainBatchOp<T>> extends BaseDee
         final double initStdev = params.get(DeepFmTrainParams.INIT_STDEV);
         final int[] layerSize = params.get(DeepFmTrainParams.LAYERS);
         final DenseVector initialWeights = params.get(DeepFmTrainParams.INITIAL_WEIGHTS);
+        final double dropoutRate = params.get(DeepFmTrainParams.DROPOUT_RATE);
 
-        DataSet<DeepFmDataFormat> initFactors = initDeepFmModel(vecSize, dim, layerSize, initialWeights,initStdev);
+        DataSet<DeepFmDataFormat> initFactors = initDeepFmModel(vecSize, dim, layerSize, initialWeights, dropoutRate, initStdev);
 
         DeepFmOptimizer optimizer = new DeepFmOptimizer(trainData, params);
         optimizer.setWithInitFactors(initFactors);
@@ -76,6 +76,7 @@ public class DeepFmTrainBatchOp<T extends DeepFmTrainBatchOp<T>> extends BaseDee
                                                       int[] dim,
                                                       int[] layerSize,
                                                       DenseVector initialWeights,
+                                                      double dropoutRate,
                                                       double initStdev) {
         // TODO: does this need getExecutionEnvironmentFromDataSets explicitly?
         return vecSize.map(new RichMapFunction<Integer, DeepFmDataFormat>() {
@@ -83,7 +84,7 @@ public class DeepFmTrainBatchOp<T extends DeepFmTrainBatchOp<T>> extends BaseDee
 
             @Override
             public DeepFmDataFormat map(Integer value) throws Exception {
-                DeepFmDataFormat innerModel = new DeepFmDataFormat(value, dim, layerSize, initialWeights, initStdev);
+                DeepFmDataFormat innerModel = new DeepFmDataFormat(value, dim, layerSize, initialWeights, dropoutRate, initStdev);
 
                 return innerModel;
             }

@@ -168,4 +168,16 @@ public interface DeepFmTrainParams<T> extends
     default T setInitialWeights(DenseVector value) {
         return set(INITIAL_WEIGHTS, value);
     }
+
+    ParamInfo<Double> DROPOUT_RATE = ParamInfoFactory
+            .createParamInfo("dropoutRate", Double.class)
+            .setDescription("Droput rate for MLP")
+            .setHasDefaultValue(0.5)
+            .build();
+    default Double getDropoutRate() {
+        return get(DROPOUT_RATE);
+    }
+    default T setDropoutRate(Double value) {
+        return set(DROPOUT_RATE, value);
+    }
 }

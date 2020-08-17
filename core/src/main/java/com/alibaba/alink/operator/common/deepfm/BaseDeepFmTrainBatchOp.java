@@ -508,12 +508,11 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         public double[][] factors;
         public double bias;
         public int[] dim;
-//        public Topology topology;
-//        public TopologyModel topologyModel = null;
         public int[] layerSize;
         public DenseVector initialWeights;
         public DenseVector coefVector;
         public Tuple2<DenseVector, double[]> dir = null;
+        public double dropoutRate;
 
         // empty constructor to make it POJO
         public DeepFmDataFormat() {
@@ -542,9 +541,10 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
          * @param dim             dim[0]-with interception, dim[1]-with linear item, dim[2]-factor number
          * @param layerSize       each layers' size in MLP
          * @param initialWeights  initial weights for MLP
+         * @param dropoutRate     dropout rate for MLP's dropout layer
          * @param initStdev       initial standard deviation for Gausssain distribution.
          */
-        public DeepFmDataFormat(int vecSize, int[] dim, int[] layerSize, DenseVector initialWeights, double initStdev) {
+        public DeepFmDataFormat(int vecSize, int[] dim, int[] layerSize, DenseVector initialWeights, double dropoutRate, double initStdev) {
             this.dim = dim;
             if (dim[1] > 0) {
                 this.linearItems = new double[vecSize];
@@ -553,6 +553,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
                 this.factors = new double[vecSize][dim[2]];
             }
             this.initialWeights = initialWeights;
+            this.dropoutRate = dropoutRate;
 
             // insert vectorSize*factorSize as the first layer's input size, 1 as the final layer's output size
             int inputSize = vecSize * dim[2];
@@ -609,6 +610,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
 
         /**
          * Reset weight vectors for deepFM including deep (MLP) part.
+         * @param layerSize       each layers' size in MLP
          * @param initStdev initial standard deviation for Gaussian distribution.
          */
         public void reset(int[] layerSize, double initStdev) {
@@ -629,21 +631,19 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             }
 
             // deep part
-            Topology topology = FeedForwardTopology.multiLayerPerceptron(layerSize, false);
+            Topology topology = FeedForwardTopology.multiLayerPerceptron(layerSize, false, dropoutRate);
 
             if (initialWeights != null) {
                 if (initialWeights.size() != topology.getWeightSize()) {
                     throw new RuntimeException("Invalid initial weights, size mismatch");
                 }
                 coefVector = initialWeights;
-//                    topologyModel = topology.getModel(initialWeights);
             } else {
                 DenseVector weights = DenseVector.zeros(topology.getWeightSize());
                 for (int i = 0; i < weights.size(); i++) {
                     weights.set(i, rand.nextGaussian() * initStdev);
                 }
                 coefVector = weights;
-//                    topologyModel = topology.getModel(coefVector);
             }
 
             DenseVector vec = new DenseVector(coefVector.size());
