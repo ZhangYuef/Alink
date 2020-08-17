@@ -1,7 +1,9 @@
 package com.alibaba.alink.operator.common.classification.ann;
 
 /**
- * The sigmoid function. f(x) = 1 / (1 + exp(-x)).
+ * The sigmoid function.
+ * f(x) = 1 / (1 + exp(-x))
+ * f'(x) = f(x) * (1 - f(x))
  */
 public class SigmoidFunction implements ActivationFunction {
     @Override
