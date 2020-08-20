@@ -1,16 +1,14 @@
 package com.alibaba.alink.operator.common.deepfm;
 
-import com.alibaba.alink.common.linalg.SparseVector;
 import com.alibaba.alink.common.linalg.Vector;
 import com.alibaba.alink.common.mapper.RichModelMapper;
 import com.alibaba.alink.common.utils.JsonConverter;
 import com.alibaba.alink.common.utils.TableUtil;
-import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp;
-import com.alibaba.alink.operator.common.deepfm.DeepFmModelDataConverter;
 
 import com.alibaba.alink.operator.common.linear.FeatureLabelUtil;
 import com.alibaba.alink.operator.common.optim.DeepFmOptimizer;
 
+import com.alibaba.alink.operator.common.utils.FmOptimizerUtils;
 import com.alibaba.alink.params.classification.SoftmaxPredictParams;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.ml.api.misc.param.Params;
@@ -70,8 +68,8 @@ public class DeepFmModelMapper extends RichModelMapper {
     protected Object predictResult(Row row) throws Exception {
         Vector vec = FeatureLabelUtil.getFeatureVector(row, false, featLen,
                 this.featIdx, this.vectorColIndex, model.vectorSize);
-        double y = DeepFmOptimizer.fmCalcY(vec, model.deepFmModel, dim).f0 +
-                DeepFmOptimizer.deepCalcY(model.deepFmModel, dim).get(0);
+        double y = FmOptimizerUtils.fmCalcY(vec, model.deepFmModel.linearItems, model.deepFmModel.factors,
+                model.deepFmModel.bias, dim).f0 + DeepFmOptimizer.deepCalcY(model.deepFmModel, dim).get(0);
 
         if (model.task.equals(BaseDeepFmTrainBatchOp.Task.REGRESSION)) {
             return y;
@@ -79,7 +77,7 @@ public class DeepFmModelMapper extends RichModelMapper {
             y = logit(y);
             return (y <= 0.5 ? model.labelValues[1] : model.labelValues[0]);
         } else {
-            throw new RuntimeException("task not support yet");
+            throw new RuntimeException("This task is not supported.");
         }
     }
 
@@ -87,8 +85,8 @@ public class DeepFmModelMapper extends RichModelMapper {
     protected Tuple2<Object, String> predictResultDetail(Row row) throws Exception {
         Vector vec = FeatureLabelUtil.getFeatureVector(row, false, featLen,
                 featIdx, this.vectorColIndex, model.vectorSize);
-        double y = DeepFmOptimizer.fmCalcY(vec, model.deepFmModel, dim).f0 +
-                DeepFmOptimizer.deepCalcY(model.deepFmModel, dim).get(0);
+        double y = FmOptimizerUtils.fmCalcY(vec, model.deepFmModel.linearItems, model.deepFmModel.factors,
+                model.deepFmModel.bias, dim).f0 + DeepFmOptimizer.deepCalcY(model.deepFmModel, dim).get(0);
 
         if (model.task.equals(BaseDeepFmTrainBatchOp.Task.REGRESSION)) {
             String detail = String.format("{\"%s\":%f}", "label", y);
@@ -101,20 +99,9 @@ public class DeepFmModelMapper extends RichModelMapper {
             detail.put(model.labelValues[0].toString(), Double.valueOf(y).toString());
             String jsonDetail = JsonConverter.toJson(detail);
             return Tuple2.of(label, jsonDetail);
-
         } else {
-            throw new RuntimeException("task not support yet");
+            throw new RuntimeException("This task is not supported.");
         }
-    }
-
-    public double getY(SparseVector feature, boolean isBinCls) {
-        double y = DeepFmOptimizer.fmCalcY(feature, model.deepFmModel, dim).f0 +
-                DeepFmOptimizer.deepCalcY(model.deepFmModel, dim).get(0);
-
-        if (isBinCls) {
-            y = logit(y);
-        }
-        return y;
     }
 
     private static double logit(double x) {

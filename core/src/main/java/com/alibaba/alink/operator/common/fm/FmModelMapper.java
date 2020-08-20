@@ -11,7 +11,7 @@ import com.alibaba.alink.common.utils.JsonConverter;
 import com.alibaba.alink.common.utils.TableUtil;
 import com.alibaba.alink.operator.common.fm.BaseFmTrainBatchOp.Task;
 import com.alibaba.alink.operator.common.linear.FeatureLabelUtil;
-import com.alibaba.alink.operator.common.optim.FmOptimizer;
+import com.alibaba.alink.operator.common.utils.FmOptimizerUtils;
 import com.alibaba.alink.params.classification.SoftmaxPredictParams;
 
 import org.apache.flink.api.java.tuple.Tuple2;
@@ -69,8 +69,8 @@ public class FmModelMapper extends RichModelMapper {
 
         Vector vec = FeatureLabelUtil.getFeatureVector(row, false, featLen,
             this.featIdx, this.vectorColIndex, model.vectorSize);
-        double y = FmOptimizer.calcY(vec, model.fmModel, dim).f0;
-        ;
+        double y = FmOptimizerUtils.fmCalcY(vec, model.fmModel.linearItems, model.fmModel.factors,
+                model.fmModel.bias, dim).f0;
 
         if (model.task.equals(Task.REGRESSION)) {
             return y;
@@ -86,7 +86,8 @@ public class FmModelMapper extends RichModelMapper {
     protected Tuple2<Object, String> predictResultDetail(Row row) throws Exception {
         Vector vec = FeatureLabelUtil.getFeatureVector(row, false, featLen,
             featIdx, this.vectorColIndex, model.vectorSize);
-        double y = FmOptimizer.calcY(vec, model.fmModel, dim).f0;
+        double y = FmOptimizerUtils.fmCalcY(vec, model.fmModel.linearItems, model.fmModel.factors,
+                model.fmModel.bias, dim).f0;
 
         if (model.task.equals(Task.REGRESSION)) {
             String detail = String.format("{\"%s\":%f}", "label", y);
@@ -106,7 +107,8 @@ public class FmModelMapper extends RichModelMapper {
     }
 
     public double getY(SparseVector feature, boolean isBinCls) {
-        double y = FmOptimizer.calcY(feature, model.fmModel, dim).f0;
+        double y = FmOptimizerUtils.fmCalcY(feature, model.fmModel.linearItems, model.fmModel.factors,
+                model.fmModel.bias, dim).f0;
         if (isBinCls) {
             y = logit(y);
         }

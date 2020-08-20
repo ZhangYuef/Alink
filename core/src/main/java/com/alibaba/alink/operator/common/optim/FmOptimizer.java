@@ -5,7 +5,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
-import com.alibaba.alink.common.MLEnvironment;
 import com.alibaba.alink.common.comqueue.ComContext;
 import com.alibaba.alink.common.comqueue.CompareCriterionFunction;
 import com.alibaba.alink.common.comqueue.CompleteResultFunction;
@@ -18,12 +17,11 @@ import com.alibaba.alink.common.linalg.Vector;
 import com.alibaba.alink.common.model.ModelParamName;
 import com.alibaba.alink.common.utils.JsonConverter;
 import com.alibaba.alink.operator.common.fm.BaseFmTrainBatchOp.FmDataFormat;
-import com.alibaba.alink.operator.common.fm.BaseFmTrainBatchOp.LogitLoss;
-import com.alibaba.alink.operator.common.fm.BaseFmTrainBatchOp.LossFunction;
-import com.alibaba.alink.operator.common.fm.BaseFmTrainBatchOp.SquareLoss;
+import com.alibaba.alink.operator.common.fm.FmLossUtils;
 import com.alibaba.alink.operator.common.fm.BaseFmTrainBatchOp.Task;
 import com.alibaba.alink.operator.common.optim.subfunc.OptimVariable;
 import com.alibaba.alink.params.recommendation.FmTrainParams;
+import com.alibaba.alink.operator.common.utils.FmOptimizerUtils;
 
 import org.apache.flink.api.common.functions.RichMapPartitionFunction;
 import org.apache.flink.api.java.DataSet;
@@ -155,7 +153,7 @@ public class FmOptimizer {
         private static final long serialVersionUID = 1276524768860519162L;
         private int[] dim;
         private double[] y;
-        private LossFunction lossFunc = null;
+        private FmLossUtils.LossFunction lossFunc = null;
         private Task task;
 
         public CalcLossAndEvaluation(int[] dim, String task) {
@@ -168,9 +166,9 @@ public class FmOptimizer {
                 d = Math.max(d, 1.0);
                 maxTarget = maxTarget + d * 0.2;
                 minTarget = minTarget - d * 0.2;
-                lossFunc = new SquareLoss(maxTarget, minTarget);
+                lossFunc = new FmLossUtils.SquareLoss(maxTarget, minTarget);
             } else {
-                lossFunc = new LogitLoss();
+                lossFunc = new FmLossUtils.LogitLoss();
             }
         }
 
@@ -191,7 +189,8 @@ public class FmOptimizer {
             Arrays.fill(y, 0.0);
             for (int s = 0; s < labledVectors.size(); s++) {
                 Vector sample = labledVectors.get(s).f2;
-                y[s] = calcY(sample, factors, dim).f0;
+                y[s] = FmOptimizerUtils.fmCalcY(sample, factors.linearItems, factors.factors,
+                        factors.bias, dim).f0;
             }
             double lossSum = 0.;
             for (int i = 0; i < y.length; i++) {
@@ -312,7 +311,7 @@ public class FmOptimizer {
         private int vectorSize;
         private final double eps = 1.0e-8;
         private int batchSize;
-        private LossFunction lossFunc = null;
+        private FmLossUtils.LossFunction lossFunc = null;
         private Random rand = new Random(2020);
 
         public UpdateLocalModel(int[] dim, double[] lambda, Params params) {
@@ -328,9 +327,9 @@ public class FmOptimizer {
                 d = Math.max(d, 1.0);
                 maxTarget = maxTarget + d * 0.2;
                 minTarget = minTarget - d * 0.2;
-                lossFunc = new SquareLoss(maxTarget, minTarget);
+                lossFunc = new FmLossUtils.SquareLoss(maxTarget, minTarget);
             } else {
-                lossFunc = new LogitLoss();
+                lossFunc = new FmLossUtils.LogitLoss();
             }
         }
 
@@ -394,7 +393,8 @@ public class FmOptimizer {
             for (int bi = 0; bi < batchSize; ++bi) {
                 Tuple3<Double, Double, Vector> sample = labledVectors.get(rand.nextInt(labledVectors.size()));
                 Vector vec = sample.f2;
-                Tuple2<Double, double[]> yVx = calcY(vec, factors, dim);
+                Tuple2<Double, double[]> yVx = FmOptimizerUtils.fmCalcY(vec, factors.linearItems, factors.factors,
+                        factors.bias, dim);
                 double yTruth = sample.f1;
                 double dldy = lossFunc.dldy(yTruth, yVx.f0);
 
@@ -475,59 +475,4 @@ public class FmOptimizer {
             }
         }
     }
-
-    /**
-     * calculate the value of y with given fm model.
-     *
-     * @param vec
-     * @param fmModel
-     * @param dim
-     * @return
-     */
-    public static Tuple2<Double, double[]> calcY(Vector vec, FmDataFormat fmModel, int[] dim) {
-        int[] featureIds;
-        double[] featureValues;
-        if (vec instanceof SparseVector) {
-            featureIds = ((SparseVector)vec).getIndices();
-            featureValues = ((SparseVector)vec).getValues();
-        } else {
-            featureIds = new int[vec.size()];
-            for (int i = 0; i < vec.size(); ++i) {
-                featureIds[i] = i;
-            }
-            featureValues = ((DenseVector)vec).getData();
-        }
-
-        double[] vx = new double[dim[2]];
-        double[] v2x2 = new double[dim[2]];
-
-        // (1) compute y
-        double y = 0.;
-
-        if (dim[0] > 0) {
-            y += fmModel.bias;
-        }
-
-        for (int i = 0; i < featureIds.length; i++) {
-            int featurePos = featureIds[i];
-            double x = featureValues[i];
-
-            // the linear term
-            if (dim[1] > 0) {
-                y += x * fmModel.linearItems[featurePos];
-            }
-            // the quadratic term
-            for (int j = 0; j < dim[2]; j++) {
-                double vixi = x * fmModel.factors[featurePos][j];
-                vx[j] += vixi;
-                v2x2[j] += vixi * vixi;
-            }
-        }
-
-        for (int i = 0; i < dim[2]; i++) {
-            y += 0.5 * (vx[i] * vx[i] - v2x2[i]);
-        }
-        return Tuple2.of(y, vx);
-    }
-
 }
