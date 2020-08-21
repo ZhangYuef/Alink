@@ -31,6 +31,8 @@ import org.apache.flink.ml.api.misc.param.Params;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.Collector;
 
+import static com.alibaba.alink.operator.common.utils.FmOptimizerUtils.calcGradient;
+
 /**
  * Fm optimizer.
  */
@@ -340,6 +342,7 @@ public class FmOptimizer {
             if (batchSize == -1) {
                 batchSize = labledVectors.size();
             }
+
             // get fmModel from static memory.
             FmDataFormat sigmaGii = context.getObj(OptimVariable.sigmaGii);
             FmDataFormat innerModel = ((List<FmDataFormat>)context.getObj(OptimVariable.fmModel)).get(0);
@@ -385,6 +388,9 @@ public class FmOptimizer {
             }
         }
 
+        /**
+         * Update FM model parameters by Adagrad optimization.
+         */
         private void updateFactors(List<Tuple3<Double, Double, Vector>> labledVectors,
                                    FmDataFormat factors,
                                    double learnRate,
@@ -398,44 +404,30 @@ public class FmOptimizer {
                 double yTruth = sample.f1;
                 double dldy = lossFunc.dldy(yTruth, yVx.f0);
 
-                int[] indices;
-                double[] vals;
-                if (sample.f2 instanceof SparseVector) {
-                    indices = ((SparseVector)sample.f2).getIndices();
-                    vals = ((SparseVector)sample.f2).getValues();
-                } else {
-                    indices = new int[sample.f2.size()];
-                    for (int i = 0; i < sample.f2.size(); ++i) {
-                        indices[i] = i;
-                    }
-                    vals = ((DenseVector)sample.f2).getData();
-                }
+                // update fmModel
+                Tuple3<Tuple3<Double, double[], double[][]>,
+                        Tuple3<Double, double[], double[][]>,
+                        double[]> result
+                        = calcGradient(
+                        Tuple3.of(sigmaGii.bias, sigmaGii.linearItems, sigmaGii.factors),
+                        Tuple3.of(factors.bias, factors.linearItems, factors.factors),
+                        yVx,
+                        sample,
+                        weights,
+                        dldy,
+                        lambda,
+                        dim,
+                        learnRate,
+                        eps);
 
-                if (dim[0] > 0) {
-                    double grad = dldy + lambda[0] * factors.bias;
+                sigmaGii.bias = result.f0.f0;
+                sigmaGii.linearItems = result.f0.f1;
+                sigmaGii.factors = result.f0.f2;
+                factors.bias = result.f1.f0;
+                factors.linearItems = result.f1.f1;
+                factors.factors = result.f1.f2;
+                weights = result.f2;
 
-                    sigmaGii.bias += grad * grad;
-                    factors.bias += -learnRate * grad / (Math.sqrt(sigmaGii.bias + eps));
-                }
-
-                for (int i = 0; i < indices.length; ++i) {
-                    int idx = indices[i];
-
-                    weights[idx] += sample.f0;
-                    // update fmModel
-                    for (int j = 0; j < dim[2]; j++) {
-                        double vixi = vals[i] * factors.factors[idx][j];
-                        double d = vals[i] * (yVx.f1[j] - vixi);
-                        double grad = dldy * d + lambda[2] * factors.factors[idx][j];
-                        sigmaGii.factors[idx][j] += grad * grad;
-                        factors.factors[idx][j] += -learnRate * grad / (Math.sqrt(sigmaGii.factors[idx][j] + eps));
-                    }
-                    if (dim[1] > 0) {
-                        double grad = dldy * vals[i] + lambda[1] * factors.linearItems[idx];
-                        sigmaGii.linearItems[idx] += grad * grad;
-                        factors.linearItems[idx] += -grad * learnRate / (Math.sqrt(sigmaGii.linearItems[idx] + eps));
-                    }
-                }
             }
         }
     }
