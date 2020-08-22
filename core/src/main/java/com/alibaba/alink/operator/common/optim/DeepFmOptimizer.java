@@ -181,7 +181,7 @@ public class DeepFmOptimizer {
         public void calc(ComContext context) {
             // buffer vector for AllReduce. buffer[0] - loss sum, buffer[1] - input size,
             // for regression task: buffer[2] - MAE, buffer[3] - MSE
-            // for classification task: buffer[2] - AUC, buffer[3] - correct number count
+            // for classification task: buffer[2] - AUC, buffer[3] - correct number
             double[] buffer = context.getObj(OptimVariable.lossAucAllReduce);
             if (buffer == null) {
                 buffer = new double[4];
@@ -191,14 +191,14 @@ public class DeepFmOptimizer {
             if (this.y == null) {
                 this.y = new double[labledVectors.size()];
             }
-
             // get DeepFmModel from static memory.
             DeepFmDataFormat factors = ((List<DeepFmDataFormat>)context.getObj(OptimVariable.deepFmModel)).get(0);
             Arrays.fill(y, 0.0);
             for (int s = 0; s < labledVectors.size(); s++) {
                 Vector sample = labledVectors.get(s).f2;
-                y[s] = FmOptimizerUtils.fmCalcY(sample, factors.linearItems, factors.factors, factors.bias, dim).f0
+                double tmp = FmOptimizerUtils.fmCalcY(sample, factors.linearItems, factors.factors, factors.bias, dim).f0
                         + deepCalcY(factors, dim).get(0);
+                y[s] = 1.0 / (1 + Math.exp(-tmp));
             }
 
             double lossSum = 0.;
@@ -209,58 +209,15 @@ public class DeepFmOptimizer {
             }
 
             if (this.task.equals(Task.REGRESSION)) {
-                double mae = 0.0;
-                double mse = 0.0;
-                for (int i = 0; i < y.length; i++) {
-                    double yDiff = y[i] - labledVectors.get(i).f1;
-                    mae += Math.abs(yDiff);
-                    mse += yDiff * yDiff;
-                }
-                buffer[2] = mae;
-                buffer[3] = mse;
+                Tuple2<Double, Double> result = FmLossUtils.metricCalc.regression(labledVectors, y);
+                buffer[2] = result.f0;
+                buffer[3] = result.f1;
             } else {
-                Integer[] order = new Integer[y.length];
-                double correctNum = 0.0;
-                for (int i = 0; i < y.length; i++) {
-                    order[i] = i;
-                    if (y[i] > 0 && labledVectors.get(i).f1 > 0.5) {
-                        correctNum += 1.0;
-                    }
-                    if (y[i] < 0 && labledVectors.get(i).f1 < 0.5) {
-                        correctNum += 1.0;
-                    }
-                }
-                Arrays.sort(order, new java.util.Comparator<Integer>() {
-                    @Override
-                    public int compare(Integer o1, Integer o2) {
-                        return Double.compare(y[o1], y[o2]);
-                    }
-                });
-
-                // mSum: positive sample number
-                // nSum: negative sample number
-                int mSum = 0;
-                int nSum = 0;
-                double posRankSum = 0.;
-                for (int i = 0; i < order.length; i++) {
-                    int sampleId = order[i];
-                    int rank = i + 1;
-                    boolean isPositiveSample = labledVectors.get(sampleId).f1 > 0.5;
-                    if (isPositiveSample) {
-                        mSum++;
-                        posRankSum += rank;
-                    } else {
-                        nSum++;
-                    }
-                }
-                if (mSum != 0 && nSum != 0) {
-                    double auc = (posRankSum - 0.5 * mSum * (mSum + 1.0)) / ((double)mSum * (double)nSum);
-                    buffer[2] = auc;
-                } else {
-                    buffer[2] = 0.0;
-                }
-                buffer[3] = correctNum;
+                Tuple2<Double, Double> result = FmLossUtils.metricCalc.classification(labledVectors, y);
+                buffer[2] = result.f0;
+                buffer[3] = result.f1;
             }
+
             buffer[0] = lossSum;
             buffer[1] = y.length;
         }
