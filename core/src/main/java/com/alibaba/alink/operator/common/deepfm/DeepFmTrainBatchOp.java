@@ -27,7 +27,7 @@ public class DeepFmTrainBatchOp<T extends DeepFmTrainBatchOp<T>> extends BaseDee
      * construct function.
      *
      * @param params parameters needed by training process.
-     * @param task   Fm task: maybe "classification" or "regression".
+     * @param task   DeepFm task: "classification" or "regression".
      */
     public DeepFmTrainBatchOp(Params params, String task) {
         super(params.set(ModelParamName.TASK, task));
@@ -36,7 +36,7 @@ public class DeepFmTrainBatchOp<T extends DeepFmTrainBatchOp<T>> extends BaseDee
     /**
      * construct function.
      *
-     * @param task
+     * @param task   DeepFm task: "classification" or "regression".
      */
     public DeepFmTrainBatchOp(String task) {
         super(new Params().set(ModelParamName.TASK, task));
@@ -46,10 +46,9 @@ public class DeepFmTrainBatchOp<T extends DeepFmTrainBatchOp<T>> extends BaseDee
      * optimize function.
      *
      * @param trainData training Data.
-     * @param vecSize   vector size.
+     * @param vecSize   input feature's max dimension.
      * @param params    parameters.
      * @param dim       dimension.
-     * @param topology  topology for multi-layer perception network
      * @param session   environment.
      * @return
      */
@@ -78,7 +77,6 @@ public class DeepFmTrainBatchOp<T extends DeepFmTrainBatchOp<T>> extends BaseDee
                                                       DenseVector initialWeights,
                                                       double dropoutRate,
                                                       double initStdev) {
-        // TODO: does this need getExecutionEnvironmentFromDataSets explicitly?
         return vecSize.map(new RichMapFunction<Integer, DeepFmDataFormat>() {
             private static final long serialVersionUID = 5898149131657343503L;
 

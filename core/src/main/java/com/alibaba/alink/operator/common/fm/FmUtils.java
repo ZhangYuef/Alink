@@ -114,7 +114,6 @@ public class FmUtils {
      * @param initData    initial data.
      * @param isRegProc   train process is regression or classification.
      * @param labelValues label values.
-     * @param labelValue  label value name.
      * @return data for DeepFM training (weight, label, feature vector),
      * for classification label it is 0.0/1.0, for regression it is Double number.
      */

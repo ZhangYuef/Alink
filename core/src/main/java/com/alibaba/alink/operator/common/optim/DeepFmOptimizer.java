@@ -1,6 +1,7 @@
 package com.alibaba.alink.operator.common.optim;
 
 import java.util.*;
+import java.util.stream.IntStream;
 
 import com.alibaba.alink.common.comqueue.ComContext;
 import com.alibaba.alink.common.comqueue.CompareCriterionFunction;
@@ -15,7 +16,6 @@ import com.alibaba.alink.common.linalg.Vector;
 import com.alibaba.alink.common.model.ModelParamName;
 import com.alibaba.alink.common.utils.JsonConverter;
 import com.alibaba.alink.operator.common.classification.ann.FeedForwardTopology;
-import com.alibaba.alink.operator.common.classification.ann.Stacker;
 import com.alibaba.alink.operator.common.classification.ann.Topology;
 import com.alibaba.alink.operator.common.classification.ann.TopologyModel;
 import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp.DeepFmDataFormat;
@@ -240,11 +240,8 @@ public class DeepFmOptimizer {
             double[] buffer = context.getObj(OptimVariable.factorAllReduce);
             DeepFmDataFormat sigmaGii = context.getObj(OptimVariable.sigmaGii);
             DeepFmDataFormat factors = ((List<DeepFmDataFormat>)context.getObj(OptimVariable.deepFmModel)).get(0);
-            Tuple2<DenseVector, double[]> grad = factors.dir;
-            int size = grad.f0.size();
+            int size = factors.dir.f0.size();
 
-            // TODO: why calc like this?
-            // vectorSize * (dim[1] + dim[2]) * 2 + vectorSize + 2 * dim[0] + size + 2
             int vectorSize = (buffer.length - 2 * dim[0] - size - 2) / (2 * (dim[2] + dim[1]) + 1);
             int jLen = dim[2] + dim[1];
             for (int i = 0; i < vectorSize; ++i) {
@@ -268,10 +265,10 @@ public class DeepFmOptimizer {
             // deep part
             int start = vectorSize * (dim[1] + dim[2]) * 2 + vectorSize + 2 * dim[0];
             for (int i = start; i < start + size; i++) {
-                grad.f0.set(i - start, buffer[i] / buffer[start + size]);
+                factors.dir.f0.set(i - start, buffer[i] / buffer[start + size]);
             }
-            grad.f1[0] = buffer[start + size];
-            grad.f1[1] = buffer[start + size + 1];
+            factors.dir.f1[0] = buffer[start + size];
+            factors.dir.f1[1] = buffer[start + size + 1];
         }
     }
 
@@ -296,8 +293,6 @@ public class DeepFmOptimizer {
         private Random rand = new Random(2020);
         private Topology topology = null;
         private TopologyModel topologyModel = null;
-
-        private Stacker stacker = null;
 
         public UpdateLocalModel(int[] dim, double[] lambda, Params params) {
             this.lambda = lambda;
@@ -341,28 +336,21 @@ public class DeepFmOptimizer {
             }
 
             if (sigmaGii == null) {
-                sigmaGii = new DeepFmDataFormat(vectorSize, dim, 0.0);
+                int[] layerSize = new int[innerModel.layerSize.length - 2];
+                for (int i = 0; i < layerSize.length; i++) {
+                    layerSize[i] = innerModel.layerSize[i + 1];
+                }
+                sigmaGii = new DeepFmDataFormat(vectorSize, dim, layerSize,
+                        innerModel.initialWeights, innerModel.dropoutRate, 0.0);
                 context.putObj(OptimVariable.sigmaGii, sigmaGii);
             }
 
-            if (stacker == null) {
-                int[] layerSize = innerModel.layerSize;
-                this.stacker = new Stacker(layerSize[0], layerSize[layerSize.length - 1], true);
-            }
-
-            DenseVector coefVector = innerModel.coefVector;
-            int size = coefVector.size();
-            // calculate local gradient
-            Tuple2<DenseVector, double[]> grad = innerModel.dir;
-            for (int i = 0; i < size; ++i) {
-                grad.f0.set(i, 0.0);
-            }
-
-            updateFactors(labledVectors, innerModel, learnRate, sigmaGii, weights, grad);
+            updateFactors(labledVectors, innerModel, sigmaGii, weights, learnRate, context.getStepNo());
 
             // dim[0] - WITH_INTERCEPT, dim[1] - WITH_LINEAR_ITEM, dim[2] - NUM_FACTOR
             // prepare buffer vec for allReduce. the last element of vec is the weight Sum.
             double[] buffer = context.getObj(OptimVariable.factorAllReduce);
+            int size = innerModel.dir.f0.size();
             if (buffer == null) {
                 buffer = new double[vectorSize * (dim[1] + dim[2]) * 2 + vectorSize + 2 * dim[0] + size + 2];
                 context.putObj(OptimVariable.factorAllReduce, buffer);
@@ -389,56 +377,52 @@ public class DeepFmOptimizer {
             // deep part
             int start = vectorSize * (dim[1] + dim[2]) * 2 + vectorSize + 2 * dim[0];
             for (int i = start; i < start + size; i++) {
-                buffer[i] = grad.f0.get(i - start) * grad.f1[0];
+                buffer[i] = innerModel.dir.f0.get(i - start) * sigmaGii.dir.f1[0];
             }
-            buffer[size] = grad.f1[0];
-            buffer[size + 1] = grad.f1[1];
+            buffer[start + size] = sigmaGii.dir.f1[0];
+            buffer[start + size + 1] = sigmaGii.dir.f1[1];
         }
 
         private void updateFactors(List<Tuple3<Double, Double, Vector>> labledVectors,
                                    DeepFmDataFormat factors,
-                                   double learnRate,
                                    DeepFmDataFormat sigmaGii,
                                    double[] weights,
-                                   Tuple2<DenseVector, double[]> grads) {
+                                   double learnRate,
+                                   int stepNum) {
             if (topology == null) {
                 topology = FeedForwardTopology.multiLayerPerceptron(factors.layerSize, false, factors.dropoutRate);
             }
-            if (topologyModel == null) {
-                topologyModel = topology.getModel(factors.coefVector);
-            } else {
-                topologyModel.resetModel(factors.coefVector);
-            }
+
             double weightSum = 0.0;
             double loss = 0.0;
+            // calculate local gradient
+            for (int i = 0; i < sigmaGii.dir.f0.size(); i++) {
+                sigmaGii.dir.f0.set(i, 0.0);
+            }
 
-            DenseVector coefVector = factors.coefVector;
             for (int bi = 0; bi < batchSize; ++bi) {
                 Tuple3<Double, Double, Vector> sample = labledVectors.get(rand.nextInt(labledVectors.size()));
                 Vector vec = sample.f2;
                 Tuple2<Double, double[]> yVx = FmOptimizerUtils.fmCalcY(vec, factors.linearItems,
                         factors.factors, factors.bias, dim);
                 DenseVector yDeep = deepCalcY(factors, dim);
-                Double y = yVx.f0 + yDeep.get(0);
+                Double yHat = 1.0 / (1 + Math.exp(-(yVx.f0 + yDeep.get(0))));
 
                 double yTruth = sample.f1;
-                double dldy = lossFunc.dldy(yTruth, y);
+                double dldy = lossFunc.dldy(yTruth, yHat);
 
-                // update fm part params
-                Tuple3<Tuple3<Double, double[], double[][]>,
-                        Tuple3<Double, double[], double[][]>,
-                        double[]> result
-                        = calcGradient(
-                        Tuple3.of(sigmaGii.bias, sigmaGii.linearItems, sigmaGii.factors),
-                        Tuple3.of(factors.bias, factors.linearItems, factors.factors),
-                        yVx,
-                        sample,
-                        weights,
-                        dldy,
-                        lambda,
-                        dim,
-                        learnRate,
-                        eps);
+                // update fm part params with Adagrad
+                Tuple3<Tuple3<Double, double[], double[][]>, Tuple3<Double, double[], double[][]>, double[]> result
+                        = calcGradient(Tuple3.of(sigmaGii.bias, sigmaGii.linearItems, sigmaGii.factors),
+                                Tuple3.of(factors.bias, factors.linearItems, factors.factors),
+                                yVx,
+                                sample,
+                                weights,
+                                dldy,
+                                lambda,
+                                dim,
+                                learnRate,
+                                eps);
 
                 sigmaGii.bias = result.f0.f0;
                 sigmaGii.linearItems = result.f0.f1;
@@ -449,31 +433,53 @@ public class DeepFmOptimizer {
                 weights = result.f2;
 
                 // deep part
-                for (int i = 0; i < grads.f0.size(); i++) {
-                    grads.f0.set(i, 0.0);
-                }
+                // TODO: check deep gradient part
+
+                // calculate
                 if (sample.f2 instanceof SparseVector) {
-                    ((SparseVector)(sample.f2)).setSize(coefVector.size());
+                    ((SparseVector)(sample.f2)).setSize(factors.dir.f0.size());
                 }
                 weightSum += sample.f0;
+                // update gradient
+                if (topologyModel == null) {
+                    topologyModel = topology.getModel(factors.dir.f0);
+                } else {
+                    topologyModel.resetModel(factors.dir.f0);
+                }
 
-                // calculate local gradient
-                topologyModel.resetModel(coefVector);
-                Tuple2<DenseMatrix, DenseMatrix> unstacked = stacker.unstack(sample);
-                topologyModel.computeGradient(unstacked.f0, unstacked.f1, grads.f0);
-                // object value
-                topologyModel.resetModel(coefVector);
-                double tmpLoss = topologyModel.computeGradient(unstacked.f0, unstacked.f1, null);
+                // convert embedding data to DenseMatrix
+                int[] indices = ((SparseVector) sample.f2).getIndices();
+                DenseMatrix embeddings = new DenseMatrix(1, factors.factors.length * dim[2]);
+                for (int i = 0; i < factors.factors.length; i++) {
+                    for (int j = 0; j < dim[2]; j++) {
+                        double embedding;
+                        int finalI = i;
+                        if (IntStream.of(indices).anyMatch(x -> x == finalI)) {
+                            embedding = factors.factors[i][j] * sample.f2.get(finalI);
+                        } else {
+                            embedding = 0;
+                        }
+                        embeddings.set(0, i * dim[2] + j, embedding);
+                    }
+                }
+                DenseMatrix labels = new DenseMatrix(1, 1);
+                labels.set(0, 0, sample.f1);
+                // labels.set(0, 0, -yVx.f0 - Math.log(1 / (sample.f1 + eps) - 1));
 
+                topologyModel.computeGradient(embeddings, labels, sigmaGii.dir.f0);
+                topologyModel.resetModel(factors.dir.f0);
+                double tmpLoss = topologyModel.computeGradient(embeddings, labels, null);
                 loss += tmpLoss * sample.f0;
             }
 
             if (weightSum != 0.0) {
-                grads.f0.scaleEqual(1.0 / weightSum);
+                sigmaGii.dir.f0.scaleEqual(1.0 / weightSum);
                 loss /= weightSum;
             }
-            grads.f1[0] = weightSum;
-            grads.f1[1] = loss;
+            sigmaGii.dir.f1[0] = weightSum;
+            sigmaGii.dir.f1[1] = loss;
+            double eta = learnRate / (sigmaGii.dir.f0.normInf() + Math.sqrt(stepNum));
+            factors.dir.f0.plusScaleEqual(sigmaGii.dir.f0, -eta);
         }
     }
 
@@ -527,7 +533,7 @@ public class DeepFmOptimizer {
 
         Topology topology = FeedForwardTopology.multiLayerPerceptron(deepFmModel.layerSize, false, deepFmModel.dropoutRate);
 
-        TopologyModel topologyModel = topology.getModel(deepFmModel.coefVector);
+        TopologyModel topologyModel = topology.getModel(deepFmModel.dir.f0);
 
         DenseVector output = topologyModel.predict(input);
 

@@ -48,12 +48,7 @@ public class Stacker implements Serializable {
 
     public Tuple2<DenseMatrix, DenseMatrix> unstack(Tuple3<Double, Double, Vector> labeledVector) {
         int batchSize = labeledVector.f0.intValue();
-        DenseVector stacked;
-        if (labeledVector.f2 instanceof SparseVector) {
-            stacked = ((SparseVector) labeledVector.f2).toDenseVector();
-        } else {
-            stacked = (DenseVector) labeledVector.f2;
-        }
+        DenseVector stacked = (DenseVector) labeledVector.f2;
 
         if (features == null || features.numRows() != batchSize) {
             features = new DenseMatrix(batchSize, inputSize);

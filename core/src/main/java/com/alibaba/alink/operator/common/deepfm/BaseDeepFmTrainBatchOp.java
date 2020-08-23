@@ -218,7 +218,6 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         public int[] dim;
         public int[] layerSize;
         public DenseVector initialWeights;
-        public DenseVector coefVector;
         public Tuple2<DenseVector, double[]> dir = null;
         public double dropoutRate;
 
@@ -263,7 +262,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             this.initialWeights = initialWeights;
             this.dropoutRate = dropoutRate;
 
-            // insert vectorSize*factorSize as the first layer's input size, 1 as the final layer's output size
+            // insert vectorSize * factorSize as the first layer's input size, 1 as the final layer's output size
             int inputSize = vecSize * dim[2];
             int[] layerSizeInsert = new int[layerSize.length + 2];
             layerSizeInsert[0] = inputSize;
@@ -340,7 +339,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
 
             // deep part
             Topology topology = FeedForwardTopology.multiLayerPerceptron(layerSize, false, dropoutRate);
-
+            DenseVector coefVector;
             if (initialWeights != null) {
                 if (initialWeights.size() != topology.getWeightSize()) {
                     throw new RuntimeException("Invalid initial weights, size mismatch");
@@ -356,6 +355,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
 
             DenseVector vec = new DenseVector(coefVector.size());
             dir = Tuple2.of(vec, new double[2]);
+            dir.f0 = coefVector;
         }
     }
 

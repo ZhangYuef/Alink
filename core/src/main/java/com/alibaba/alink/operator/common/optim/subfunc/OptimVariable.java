@@ -30,8 +30,6 @@ public class OptimVariable {
     public final static String factorAllReduce = "factorAllReduce";
     public final static String lossAucAllReduce = "lossAucAllReduce";
 
-    // deepFM
     public final static String deepFmTrainData = "deepFmTrainData";
     public final static String deepFmModel = "deepFmModel";
-    // TODO: factorAllReduce怎么加？
 }
