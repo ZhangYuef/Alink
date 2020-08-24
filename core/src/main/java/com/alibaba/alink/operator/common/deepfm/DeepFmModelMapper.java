@@ -69,7 +69,7 @@ public class DeepFmModelMapper extends RichModelMapper {
         Vector vec = FeatureLabelUtil.getFeatureVector(row, false, featLen,
                 this.featIdx, this.vectorColIndex, model.vectorSize);
         double y = FmOptimizerUtils.fmCalcY(vec, model.deepFmModel.linearItems, model.deepFmModel.factors,
-                model.deepFmModel.bias, dim).f0 + DeepFmOptimizer.deepCalcY(model.deepFmModel, dim).get(0);
+                model.deepFmModel.bias, dim).f0 + DeepFmOptimizer.deepCalcY(model.deepFmModel, vec, dim).get(0);
 
         if (model.task.equals(BaseDeepFmTrainBatchOp.Task.REGRESSION)) {
             return y;
@@ -86,7 +86,7 @@ public class DeepFmModelMapper extends RichModelMapper {
         Vector vec = FeatureLabelUtil.getFeatureVector(row, false, featLen,
                 featIdx, this.vectorColIndex, model.vectorSize);
         double y = FmOptimizerUtils.fmCalcY(vec, model.deepFmModel.linearItems, model.deepFmModel.factors,
-                model.deepFmModel.bias, dim).f0 + DeepFmOptimizer.deepCalcY(model.deepFmModel, dim).get(0);
+                model.deepFmModel.bias, dim).f0 + DeepFmOptimizer.deepCalcY(model.deepFmModel, vec, dim).get(0);
 
         if (model.task.equals(BaseDeepFmTrainBatchOp.Task.REGRESSION)) {
             String detail = String.format("{\"%s\":%f}", "label", y);
