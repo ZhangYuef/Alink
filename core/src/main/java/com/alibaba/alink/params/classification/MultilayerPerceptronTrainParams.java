@@ -37,10 +37,10 @@ public interface MultilayerPerceptronTrainParams<T> extends
         .setHasDefaultValue(null)
         .build();
     ParamInfo<Double> DROPOUT_RATE = ParamInfoFactory
-            .createParamInfo("dropoutRate", Double.class)
-            .setDescription("Droput rate for MLP")
-            .setHasDefaultValue(0.)
-            .build();
+        .createParamInfo("dropoutRate", Double.class)
+        .setDescription("Dropout rate for MLP")
+        .setHasDefaultValue(0.)
+        .build();
 
     default int[] getLayers() {
         return get(LAYERS);

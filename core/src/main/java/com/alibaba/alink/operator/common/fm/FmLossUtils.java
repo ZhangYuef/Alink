@@ -148,17 +148,14 @@ public class FmLossUtils {
                 }
             }
 
-            Tuple2<Double, Double> result = new Tuple2<Double, Double>();
-            result.f1 = correctNum;
-
+            double auc;
             if (mSum != 0 && nSum != 0) {
-                double auc = (posRankSum - 0.5 * mSum * (mSum + 1.0)) / ((double)mSum * (double)nSum);
-                result.f0 = auc;
+                auc = (posRankSum - 0.5 * mSum * (mSum + 1.0)) / ((double)mSum * (double)nSum);
             } else {
-                result.f0 = 0.0;
+                auc = 0.0;
             }
 
-            return result;
+            return Tuple2.of(auc, correctNum);
         }
     }
 }

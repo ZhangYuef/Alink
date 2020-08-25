@@ -37,7 +37,7 @@ public class DeepFmClassifier extends Trainer <DeepFmClassifier, DeepFmModel>
     }
 
     @Override
-    protected  BatchOperator train(BatchOperator in) {
+    protected BatchOperator train(BatchOperator in) {
         return new DeepFmClassifierTrainBatchOp(this.getParams()).linkFrom(in);
     }
 }
