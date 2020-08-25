@@ -197,7 +197,7 @@ public class DeepFmOptimizer {
             for (int s = 0; s < labledVectors.size(); s++) {
                 Vector sample = labledVectors.get(s).f2;
                 double tmp = FmOptimizerUtils.fmCalcY(sample, factors.linearItems, factors.factors, factors.bias, dim).f0
-                        + deepCalcY(factors, dim).get(0);
+                        + deepCalcY(factors, sample, dim).get(0);
                 y[s] = 1.0 / (1 + Math.exp(-tmp));
             }
 
@@ -265,7 +265,7 @@ public class DeepFmOptimizer {
             // deep part
             int start = vectorSize * (dim[1] + dim[2]) * 2 + vectorSize + 2 * dim[0];
             for (int i = start; i < start + size; i++) {
-                factors.dir.f0.set(i - start, buffer[i] / buffer[start + size]);
+                factors.dir.f0.set(i - start, buffer[i]);
             }
             factors.dir.f1[0] = buffer[start + size];
             factors.dir.f1[1] = buffer[start + size + 1];
@@ -377,10 +377,10 @@ public class DeepFmOptimizer {
             // deep part
             int start = vectorSize * (dim[1] + dim[2]) * 2 + vectorSize + 2 * dim[0];
             for (int i = start; i < start + size; i++) {
-                buffer[i] = innerModel.dir.f0.get(i - start) * sigmaGii.dir.f1[0];
+                buffer[i] = innerModel.dir.f0.get(i - start);
             }
-            buffer[start + size] = sigmaGii.dir.f1[0];
-            buffer[start + size + 1] = sigmaGii.dir.f1[1];
+            buffer[start + size] = innerModel.dir.f1[0];
+            buffer[start + size + 1] = innerModel.dir.f1[1];
         }
 
         private void updateFactors(List<Tuple3<Double, Double, Vector>> labledVectors,
@@ -390,26 +390,43 @@ public class DeepFmOptimizer {
                                    double learnRate,
                                    int stepNum) {
             if (topology == null) {
-                topology = FeedForwardTopology.multiLayerPerceptron(factors.layerSize, false, factors.dropoutRate);
+                topology = FeedForwardTopology.multiLayerPerceptron(factors.layerSize,
+                        true,
+                        factors.dropoutRate);
             }
 
             double weightSum = 0.0;
             double loss = 0.0;
-            // calculate local gradient
-            for (int i = 0; i < sigmaGii.dir.f0.size(); i++) {
-                sigmaGii.dir.f0.set(i, 0.0);
-            }
 
             for (int bi = 0; bi < batchSize; ++bi) {
                 Tuple3<Double, Double, Vector> sample = labledVectors.get(rand.nextInt(labledVectors.size()));
                 Vector vec = sample.f2;
                 Tuple2<Double, double[]> yVx = FmOptimizerUtils.fmCalcY(vec, factors.linearItems,
                         factors.factors, factors.bias, dim);
-                DenseVector yDeep = deepCalcY(factors, dim);
+                DenseVector yDeep = deepCalcY(factors, sample.f2, dim);
                 Double yHat = 1.0 / (1 + Math.exp(-(yVx.f0 + yDeep.get(0))));
 
                 double yTruth = sample.f1;
                 double dldy = lossFunc.dldy(yTruth, yHat);
+                dldy = dldy * yHat * (1 - yHat);
+
+                // convert embedding data to DenseMatrix
+                int[] indices = ((SparseVector) sample.f2).getIndices();
+                DenseMatrix embeddings = new DenseMatrix(1, factors.factors.length * dim[2]);
+                for (int i = 0; i < factors.factors.length; i++) {
+                    for (int j = 0; j < dim[2]; j++) {
+                        double embedding;
+                        int finalI = i;
+                        if (IntStream.of(indices).anyMatch(x -> x == finalI)) {
+                            embedding = factors.factors[i][j] * sample.f2.get(finalI);
+                        } else {
+                            embedding = 0;
+                        }
+                        embeddings.set(0, i * dim[2] + j, embedding);
+                    }
+                }
+                DenseMatrix labels = new DenseMatrix(1, 1);
+                labels.set(0, 0, sample.f1);
 
                 // update fm part params with Adagrad
                 Tuple3<Tuple3<Double, double[], double[][]>, Tuple3<Double, double[], double[][]>, double[]> result
@@ -433,9 +450,6 @@ public class DeepFmOptimizer {
                 weights = result.f2;
 
                 // deep part
-                // TODO: check deep gradient part
-
-                // calculate
                 if (sample.f2 instanceof SparseVector) {
                     ((SparseVector)(sample.f2)).setSize(factors.dir.f0.size());
                 }
@@ -446,40 +460,31 @@ public class DeepFmOptimizer {
                 } else {
                     topologyModel.resetModel(factors.dir.f0);
                 }
-
-                // convert embedding data to DenseMatrix
-                int[] indices = ((SparseVector) sample.f2).getIndices();
-                DenseMatrix embeddings = new DenseMatrix(1, factors.factors.length * dim[2]);
-                for (int i = 0; i < factors.factors.length; i++) {
-                    for (int j = 0; j < dim[2]; j++) {
-                        double embedding;
-                        int finalI = i;
-                        if (IntStream.of(indices).anyMatch(x -> x == finalI)) {
-                            embedding = factors.factors[i][j] * sample.f2.get(finalI);
-                        } else {
-                            embedding = 0;
-                        }
-                        embeddings.set(0, i * dim[2] + j, embedding);
-                    }
+                // calculate local gradient
+                DenseVector grad = DenseVector.zeros(sigmaGii.dir.f0.size());
+                for (int i = 0; i < grad.size(); i++) {
+                    grad.set(i, 0.0);
                 }
-                DenseMatrix labels = new DenseMatrix(1, 1);
-                labels.set(0, 0, sample.f1);
-                // labels.set(0, 0, -yVx.f0 - Math.log(1 / (sample.f1 + eps) - 1));
 
-                topologyModel.computeGradient(embeddings, labels, sigmaGii.dir.f0);
+                topologyModel.computeGradient(embeddings, labels, grad);
+                grad.scaleEqual(dldy);
+                for (int i = 0; i < sigmaGii.dir.f0.size(); i++) {
+                    sigmaGii.dir.f0.add(i, grad.get(i) * grad.get(i));
+                    double eta = learnRate / Math.sqrt(sigmaGii.dir.f0.get(i) + eps);
+                    factors.dir.f0.add(i, -eta * grad.get(i));
+                }
                 topologyModel.resetModel(factors.dir.f0);
+
                 double tmpLoss = topologyModel.computeGradient(embeddings, labels, null);
                 loss += tmpLoss * sample.f0;
             }
 
             if (weightSum != 0.0) {
-                sigmaGii.dir.f0.scaleEqual(1.0 / weightSum);
+                factors.dir.f0.scaleEqual(1.0 / weightSum);
                 loss /= weightSum;
             }
-            sigmaGii.dir.f1[0] = weightSum;
-            sigmaGii.dir.f1[1] = loss;
-            double eta = learnRate / (sigmaGii.dir.f0.normInf() + Math.sqrt(stepNum));
-            factors.dir.f0.plusScaleEqual(sigmaGii.dir.f0, -eta);
+            factors.dir.f1[0] = weightSum;
+            factors.dir.f1[1] = loss;
         }
     }
 
@@ -521,20 +526,26 @@ public class DeepFmOptimizer {
 
 
 
-    public static DenseVector deepCalcY(DeepFmDataFormat deepFmModel, int[] dim) {
+    public static DenseVector deepCalcY(DeepFmDataFormat deepFmModel, Vector sampleFeature, int[] dim) {
         // convert and concatenate embeddings into 1 dimension
         int vecSize = deepFmModel.factors.length;
+        int[] indices = ((SparseVector) sampleFeature).getIndices();
         DenseVector input = new DenseVector(vecSize * dim[2]);
         for (int i = 0; i < vecSize; i++) {
             for (int j = 0; j < dim[2]; j++) {
-                input.set(i * dim[2] + j, deepFmModel.factors[i][j]);
+                int finalI = i;
+                if (IntStream.of(indices).anyMatch(x -> x == finalI)) {
+                    input.set(i * dim[2] + j, deepFmModel.factors[i][j] * sampleFeature.get(finalI));
+                } else {
+                    input.set(i * dim[2] + j, 0);
+                }
             }
         }
 
-        Topology topology = FeedForwardTopology.multiLayerPerceptron(deepFmModel.layerSize, false, deepFmModel.dropoutRate);
-
+        Topology topology = FeedForwardTopology.multiLayerPerceptron(deepFmModel.layerSize,
+                true,
+                deepFmModel.dropoutRate);
         TopologyModel topologyModel = topology.getModel(deepFmModel.dir.f0);
-
         DenseVector output = topologyModel.predict(input);
 
         return output;

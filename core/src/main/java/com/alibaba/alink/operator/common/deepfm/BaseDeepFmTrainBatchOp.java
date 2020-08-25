@@ -245,6 +245,24 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
         /**
          *
          * @param vecSize         input feature's max dimension
+         * @param numField        field number
+         * @param dim             dim[0]-with interception, dim[1]-with linear item, dim[2]-factor number
+         * @param initStdev       initial standard deviation for Gausssain distribution.
+         */
+        public DeepFmDataFormat(int vecSize, int numField, int[] dim, double initStdev) {
+            this.dim = dim;
+            if (dim[1] > 0) {
+                this.linearItems = new double[vecSize];
+            }
+            if (dim[2] > 0) {
+                this.factors = new double[vecSize * numField][dim[2]];
+            }
+            reset(initStdev);
+        }
+
+        /**
+         *
+         * @param vecSize         input feature's max dimension
          * @param dim             dim[0]-with interception, dim[1]-with linear item, dim[2]-factor number
          * @param layerSize       each layers' size in MLP
          * @param initialWeights  initial weights for MLP
@@ -273,24 +291,6 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             this.layerSize = layerSizeInsert;
 
             reset(this.layerSize, initStdev);
-        }
-
-        /**
-         *
-         * @param vecSize         input feature's max dimension
-         * @param numField        field number
-         * @param dim             dim[0]-with interception, dim[1]-with linear item, dim[2]-factor number
-         * @param initStdev       initial standard deviation for Gausssain distribution.
-         */
-        public DeepFmDataFormat(int vecSize, int numField, int[] dim, double initStdev) {
-            this.dim = dim;
-            if (dim[1] > 0) {
-                this.linearItems = new double[vecSize];
-            }
-            if (dim[2] > 0) {
-                this.factors = new double[vecSize * numField][dim[2]];
-            }
-            reset(initStdev);
         }
 
         /**
@@ -338,7 +338,9 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             }
 
             // deep part
-            Topology topology = FeedForwardTopology.multiLayerPerceptron(layerSize, false, dropoutRate);
+            Topology topology = FeedForwardTopology.multiLayerPerceptron(layerSize,
+                    true,
+                    dropoutRate);
             DenseVector coefVector;
             if (initialWeights != null) {
                 if (initialWeights.size() != topology.getWeightSize()) {
@@ -353,9 +355,7 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
                 coefVector = weights;
             }
 
-            DenseVector vec = new DenseVector(coefVector.size());
-            dir = Tuple2.of(vec, new double[2]);
-            dir.f0 = coefVector;
+            dir = Tuple2.of(coefVector, new double[2]);
         }
     }
 

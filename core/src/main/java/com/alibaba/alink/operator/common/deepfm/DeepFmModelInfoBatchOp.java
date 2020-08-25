@@ -15,8 +15,8 @@ import org.apache.flink.types.Row;
  */
 public class DeepFmModelInfoBatchOp
     extends ExtractModelInfoBatchOp<DeepFmModelInfo, DeepFmModelInfoBatchOp> {
-
     private TypeInformation labelType;
+
     public DeepFmModelInfoBatchOp(TypeInformation labelType) {
         this(new Params());
         this.labelType = labelType;
