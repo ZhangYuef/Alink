@@ -9,9 +9,7 @@ import com.alibaba.alink.common.comqueue.CompleteResultFunction;
 import com.alibaba.alink.common.comqueue.ComputeFunction;
 import com.alibaba.alink.common.comqueue.IterativeComQueue;
 import com.alibaba.alink.common.comqueue.communication.AllReduce;
-import com.alibaba.alink.common.linalg.DenseMatrix;
-import com.alibaba.alink.common.linalg.DenseVector;
-import com.alibaba.alink.common.linalg.SparseVector;
+import com.alibaba.alink.common.linalg.*;
 import com.alibaba.alink.common.linalg.Vector;
 import com.alibaba.alink.common.model.ModelParamName;
 import com.alibaba.alink.common.utils.JsonConverter;
@@ -24,6 +22,9 @@ import com.alibaba.alink.operator.common.deepfm.BaseDeepFmTrainBatchOp.Task;
 import com.alibaba.alink.operator.common.optim.subfunc.OptimVariable;
 import com.alibaba.alink.params.recommendation.DeepFmTrainParams;
 import com.alibaba.alink.operator.common.utils.FmOptimizerUtils;
+import com.alibaba.alink.params.shared.linear.HasL1;
+import com.alibaba.alink.params.shared.linear.HasL2;
+import com.sun.org.apache.xpath.internal.operations.Bool;
 import org.apache.flink.api.common.functions.RichMapPartitionFunction;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.tuple.Tuple2;
@@ -126,14 +127,14 @@ public class DeepFmOptimizer {
             if (task.equals(Task.BINARY_CLASSIFICATION)) {
                 System.out.println("step : " + context.getStepNo() + " loss : "
                         + loss[0] / loss[1] + "  auc : " + loss[2] / context.getNumTask() + " accuracy : "
-                        + loss[3] / loss[1] + " time : " + (System.currentTimeMillis()
+                        + loss[3] / loss[1] + " mlp loss : " + loss[4] +
+                        " time : " + (System.currentTimeMillis()
                         - oldTime));
                 oldTime = System.currentTimeMillis();
             } else {
                 System.out.println("step : " + context.getStepNo() + " loss : "
                         + loss[0] / loss[1] + "  mae : " + loss[2] / loss[1] + " mse : "
-                        + loss[3] / loss[1] + " time : " + (System.currentTimeMillis()
-                        - oldTime));
+                        + loss[3] / loss[1] + " time : " + (System.currentTimeMillis() - oldTime));
                 oldTime = System.currentTimeMillis();
             }
 
@@ -184,7 +185,7 @@ public class DeepFmOptimizer {
             // for classification task: buffer[2] - AUC, buffer[3] - correct number
             double[] buffer = context.getObj(OptimVariable.lossAucAllReduce);
             if (buffer == null) {
-                buffer = new double[4];
+                buffer = new double[5];
                 context.putObj(OptimVariable.lossAucAllReduce, buffer);
             }
             List<Tuple3<Double, Double, Vector>> labledVectors = context.getObj(OptimVariable.deepFmTrainData);
@@ -220,6 +221,7 @@ public class DeepFmOptimizer {
 
             buffer[0] = lossSum;
             buffer[1] = y.length;
+            buffer[4] = factors.dir.f1[1];      // MLP loss
         }
     }
 
@@ -293,6 +295,8 @@ public class DeepFmOptimizer {
         private Random rand = new Random(2020);
         private Topology topology = null;
         private TopologyModel topologyModel = null;
+        private double l1;
+        private double l2;
 
         public UpdateLocalModel(int[] dim, double[] lambda, Params params) {
             this.lambda = lambda;
@@ -300,6 +304,8 @@ public class DeepFmOptimizer {
             this.task = Task.valueOf(params.get(ModelParamName.TASK).toUpperCase());
             this.learnRate = params.get(DeepFmTrainParams.LEARN_RATE);
             this.batchSize = params.get(DeepFmTrainParams.MINIBATCH_SIZE);
+            this.l1 = params.get(HasL1.L_1);
+            this.l2 = params.get(HasL2.L_2);
 
             if (task.equals(Task.REGRESSION)) {
                 double minTarget = -1.0e20;
@@ -425,8 +431,16 @@ public class DeepFmOptimizer {
                         embeddings.set(0, i * dim[2] + j, embedding);
                     }
                 }
-                DenseMatrix labels = new DenseMatrix(1, 1);
-                labels.set(0, 0, sample.f1);
+                Boolean onehot = true;
+                int[] layerSize = factors.layerSize;
+                DenseMatrix labels = new DenseMatrix(1, onehot ? layerSize[layerSize.length - 1] : 1);
+                if (onehot) {
+                    Arrays.fill(labels.getData(), 0.);
+                    labels.set(0, sample.f1.intValue(), 1.);
+                } else {
+                    throw new RuntimeException("Unsupported now.");
+                    // labels.set(0, 0, sample.f1);
+                }
 
                 // update fm part params with Adagrad
                 Tuple3<Tuple3<Double, double[], double[][]>, Tuple3<Double, double[], double[][]>, double[]> result
@@ -460,7 +474,9 @@ public class DeepFmOptimizer {
                 } else {
                     topologyModel.resetModel(factors.dir.f0);
                 }
-                // calculate local gradient
+                DenseVector oldCoefVector = factors.dir.f0;
+
+                // calculate local gradient with Adagrad
                 DenseVector grad = DenseVector.zeros(sigmaGii.dir.f0.size());
                 for (int i = 0; i < grad.size(); i++) {
                     grad.set(i, 0.0);
@@ -477,10 +493,22 @@ public class DeepFmOptimizer {
 
                 double tmpLoss = topologyModel.computeGradient(embeddings, labels, null);
                 loss += tmpLoss * sample.f0;
+
+                if (this.l1 != 0.) {
+                    double[] coefArray = oldCoefVector.getData();
+                    for (int i = 0; i < coefArray.length; i++) {
+                        factors.dir.f0.add(i, Math.signum(coefArray[i] * this.l1));
+                    }
+                    loss += this.l1 * oldCoefVector.normL1();
+                }
+                if (this.l2 != 0.) {
+                    factors.dir.f0.plusScaleEqual(oldCoefVector, this.l2);
+                    loss += this.l2 * MatVecOp.dot(oldCoefVector, oldCoefVector);
+                }
             }
 
             if (weightSum != 0.0) {
-                factors.dir.f0.scaleEqual(1.0 / weightSum);
+                //factors.dir.f0.scaleEqual(1.0 / weightSum);
                 loss /= weightSum;
             }
             factors.dir.f1[0] = weightSum;

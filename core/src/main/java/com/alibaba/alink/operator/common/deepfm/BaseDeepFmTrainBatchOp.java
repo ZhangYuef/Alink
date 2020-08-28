@@ -280,14 +280,14 @@ public abstract class BaseDeepFmTrainBatchOp<T extends BaseDeepFmTrainBatchOp<T>
             this.initialWeights = initialWeights;
             this.dropoutRate = dropoutRate;
 
-            // insert vectorSize * factorSize as the first layer's input size, 1 as the final layer's output size
+            // insert vectorSize * factorSize as the first layer's input size, 2 as the final layer's output size
             int inputSize = vecSize * dim[2];
             int[] layerSizeInsert = new int[layerSize.length + 2];
             layerSizeInsert[0] = inputSize;
             for (int i = 0; i < layerSize.length; i++) {
                 layerSizeInsert[i + 1] = layerSize[i];
             }
-            layerSizeInsert[layerSizeInsert.length - 1] = 1;
+            layerSizeInsert[layerSizeInsert.length - 1] = 2;
             this.layerSize = layerSizeInsert;
 
             reset(this.layerSize, initStdev);
