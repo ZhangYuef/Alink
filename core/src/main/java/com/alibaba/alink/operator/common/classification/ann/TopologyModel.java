@@ -46,4 +46,6 @@ public abstract class TopologyModel implements Serializable {
      * @return The loss value.
      */
     public abstract double computeGradient(DenseMatrix data, DenseMatrix target, DenseVector cumGrad);
+
+    public abstract double computeGradient(DenseMatrix data, Double in, DenseMatrix target, DenseVector cumGrad);
 }

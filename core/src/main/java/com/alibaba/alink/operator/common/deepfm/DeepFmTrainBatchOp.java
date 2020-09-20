@@ -4,18 +4,13 @@ import com.alibaba.alink.common.MLEnvironment;
 import com.alibaba.alink.common.linalg.DenseVector;
 import com.alibaba.alink.common.linalg.Vector;
 import com.alibaba.alink.common.model.ModelParamName;
-import com.alibaba.alink.operator.batch.BatchOperator;
-import com.alibaba.alink.operator.common.classification.ann.Topology;
 import com.alibaba.alink.operator.common.optim.DeepFmOptimizer;
 import com.alibaba.alink.params.recommendation.DeepFmTrainParams;
 
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.tuple.Tuple3;
-import org.apache.flink.configuration.Configuration;
 import org.apache.flink.ml.api.misc.param.Params;
-
-import java.util.Random;
 
 /**
  * DeepFM model training.

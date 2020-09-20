@@ -34,7 +34,7 @@ public class ALSExample {
         AlsPredictBatchOp predictor = new AlsPredictBatchOp()
             .setUserCol("userid").setItemCol("movieid").setPredictionCol("prediction_result");
 
-        BatchOperator preditionResult = predictor.linkFrom(model, testData).select("rating, prediction_result");
-        preditionResult.print();
+        BatchOperator predictionResult = predictor.linkFrom(model, testData).select("rating, prediction_result");
+        predictionResult.print();
     }
 }

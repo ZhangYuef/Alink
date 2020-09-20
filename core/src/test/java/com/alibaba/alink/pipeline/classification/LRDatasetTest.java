@@ -1,8 +1,14 @@
-package com.alibaba.alink.pipeline.recommendation;
+package com.alibaba.alink.pipeline.classification;
+
+import java.io.File;
+import java.util.Arrays;
+import java.util.List;
 
 import com.alibaba.alink.common.MLEnvironmentFactory;
+import com.alibaba.alink.operator.AlgoOperator;
 import com.alibaba.alink.operator.batch.BatchOperator;
-import com.alibaba.alink.operator.batch.classification.DeepFmClassifierTrainBatchOp;
+import com.alibaba.alink.operator.batch.classification.LogisticRegressionPredictBatchOp;
+import com.alibaba.alink.operator.batch.classification.LogisticRegressionTrainBatchOp;
 import com.alibaba.alink.operator.batch.dataproc.JsonValueBatchOp;
 import com.alibaba.alink.operator.batch.dataproc.SplitBatchOp;
 import com.alibaba.alink.operator.batch.dataproc.vector.VectorAssemblerBatchOp;
@@ -11,15 +17,18 @@ import com.alibaba.alink.operator.batch.feature.OneHotPredictBatchOp;
 import com.alibaba.alink.operator.batch.feature.OneHotTrainBatchOp;
 import com.alibaba.alink.operator.batch.sink.CsvSinkBatchOp;
 import com.alibaba.alink.operator.batch.source.CsvSourceBatchOp;
-import com.alibaba.alink.operator.common.deepfm.DeepFmPredictBatchOp;
-import com.alibaba.alink.operator.common.deepfm.DeepFmTrainBatchOp;
-import com.alibaba.alink.pipeline.classification.DeepFmClassifier;
-import com.alibaba.alink.pipeline.classification.DeepFmModel;
+import com.alibaba.alink.operator.batch.source.MemSourceBatchOp;
+import com.alibaba.alink.operator.stream.StreamOperator;
+import com.alibaba.alink.operator.stream.source.MemSourceStreamOp;
+import com.alibaba.alink.pipeline.Pipeline;
+import com.alibaba.alink.pipeline.PipelineModel;
+
+import org.apache.flink.ml.api.misc.param.Params;
+import org.apache.flink.types.Row;
+import org.junit.Assert;
 import org.junit.Test;
 
-import java.io.File;
-
-public class DeepFmDatasetTest {
+public class LRDatasetTest {
 
     @Test
     public void pipelineTestBatch() throws Exception {
@@ -39,7 +48,7 @@ public class DeepFmDatasetTest {
                     = new String[] {"age", "fnlwgt", "education_num", "capital_gain", "capital_loss", "hours_per_week",
                     "vec"};
 
-            String[] binaryCols = new String[] {"marital_status",  "occupation", "relationship", "race",
+            String[] binaryCols = new String[] {"marital_status", "occupation", "relationship", "race",
                     "sex", "education", "workclass", "native_country"};
 
             BatchOperator oneHot = new OneHotTrainBatchOp().setSelectedCols(binaryCols).linkFrom(data);
@@ -65,54 +74,41 @@ public class DeepFmDatasetTest {
         BatchOperator trainData = spliter;
         BatchOperator testData = spliter.getSideOutput(0);
 
-        DeepFmClassifierTrainBatchOp adagrad = new DeepFmClassifierTrainBatchOp()
+        LogisticRegressionTrainBatchOp trainLr = new LogisticRegressionTrainBatchOp()
                 .setVectorCol("vec")
                 .setLabelCol("label")
-                .setWithIntercept(false)
-                .setNumEpochs(10)
-                .setNumFactor(10)
-                .setInitStdev(0.01)
-                .setLearnRate(0.01)
-                .setEpsilon(0.0001)
-                .setLayers(new int[]{10, 10, 10})      // hidden layers' sizes
-                .setDropoutRate(0.5)
-                .linkFrom(trainData);
+                .setMaxIter(100)
+                .setOptimMethod("Owlqn")
+                .setWithIntercept(true)
+                .setStandardization(true)
+                .setL1(0.001)
+                .setEpsilon(1.0e-6)
+                .linkFrom(trainData);//.print();
+        // trainLr.lazyPrintTrainInfo();
+        //BatchOperator trainLr = new LogisticRegressionTrainBatchOp(new Params()
+        //    .set("vectorCol", "vector")
+        //    .set("labelColName", labelColName)
+        //    .set("maxIter", 500)).setEpsilon(1.0e-7)
+        //    .setOptimMethod("LBFGS")
+        //    .linkFrom(normalData);
 
-        BatchOperator predictResult = new DeepFmPredictBatchOp().setVectorCol("vec").setPredictionCol("pred")
+        Params predParams = new Params();
+        // Use test data to do prediction.
+        BatchOperator result = new LogisticRegressionPredictBatchOp(predParams).setVectorCol("vec")
+                .setPredictionCol("pred")
                 .setPredictionDetailCol("details")
-                .linkFrom(adagrad, testData);
+                .linkFrom(trainLr, testData);
 
-        predictResult
-                .link(
-                        new EvalBinaryClassBatchOp()
-                                .setLabelCol("label")
-                                .setPredictionDetailCol("details")
-                )
-                .link(
-                        new JsonValueBatchOp()
-                                .setSelectedCol("Data")
-                                .setReservedCols(new String[]{"Statistics"})
-                                .setOutputCols(new String[]{"Accuracy", "AUC", "ConfusionMatrix"})
-                                .setJsonPath(new String[]{"$.Accuracy", "$.AUC", "$.ConfusionMatrix"})
-                )
+        new EvalBinaryClassBatchOp()
+                .setLabelCol("label")
+                .setPredictionDetailCol("details")
+                .setPositiveLabelValueString("<=50K")
+                .linkFrom(result)
+                .link(new JsonValueBatchOp()
+                        .setSelectedCol("Data")
+                        .setReservedCols(new String[]{"Statistics"})
+                        .setOutputCols(new String[]{"Accuracy", "AUC"})
+                        .setJsonPath(new String[]{"$.Accuracy", "$.AUC"}))
                 .print();
-
-//        DeepFmClassifier adagrad = new DeepFmClassifier()
-//                .setVectorCol("vec")
-//                .setLabelCol("label")
-//                .setNumEpochs(10)
-//                .setNumFactor(5)
-//                .setInitStdev(0.01)
-//                .setLearnRate(0.1)
-//                .setEpsilon(0.0001)
-//                .setLayers(new int[]{10, 10, 10})      // hidden layers' sizes
-//                .setPredictionCol("pred")
-//                .setPredictionDetailCol("details")
-//                .enableLazyPrintModelInfo();
-//
-//        DeepFmModel model = adagrad.fit(trainData);
-//        BatchOperator result = model.transform(testData);
-//
-//        result.print();
     }
 }

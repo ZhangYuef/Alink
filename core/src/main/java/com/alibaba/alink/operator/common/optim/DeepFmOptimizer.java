@@ -142,12 +142,13 @@ public class DeepFmOptimizer {
                 return true;
             }
 
-            if (Math.abs(oldLoss - loss[0] / loss[1]) / oldLoss < epsilon) {
-                return true;
-            } else {
-                oldLoss = loss[0] / loss[1];
-                return false;
-            }
+//            if (Math.abs(oldLoss - loss[0] / loss[1]) / oldLoss < epsilon) {
+//                return true;
+//            } else {
+//                oldLoss = loss[0] / loss[1];
+//                return false;
+//            }
+            return false;
         }
     }
 
@@ -414,7 +415,7 @@ public class DeepFmOptimizer {
 
                 double yTruth = sample.f1;
                 double dldy = lossFunc.dldy(yTruth, yHat);
-                dldy = dldy * yHat * (1 - yHat);
+                // dldy = dldy * yHat * (1 - yHat);
 
                 // convert embedding data to DenseMatrix
                 int[] indices = ((SparseVector) sample.f2).getIndices();

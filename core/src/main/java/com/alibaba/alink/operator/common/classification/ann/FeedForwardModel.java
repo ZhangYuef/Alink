@@ -108,4 +108,44 @@ public class FeedForwardModel extends TopologyModel {
         }
         return loss;
     }
+
+    @Override
+    public double computeGradient(DenseMatrix data, Double in, DenseMatrix target, DenseVector cumGrad) {
+        outputs = forward(data, true);
+        int currentBatchSize = data.numRows();
+        if (deltas == null || deltas.get(0).numRows() != currentBatchSize) {
+            deltas = new ArrayList<>(layers.size() - 1);
+            int inputSize = data.numCols();
+            for (int i = 0; i < layers.size() - 1; i++) {
+                int outputSize = layers.get(i).getOutputSize(inputSize);
+                deltas.add(new DenseMatrix(currentBatchSize, outputSize));
+                inputSize = outputSize;
+            }
+        }
+        int L = layerModels.size() - 1;
+        if (!(this.layerModels.get(L) instanceof AnnLossFunction)) {
+            throw new UnsupportedOperationException("The last layer should be loss function");
+        }
+        AnnLossFunction labelWithError = (AnnLossFunction) this.layerModels.get(L);
+        // TODO: suppose batchsize is 1 here
+        outputs.get(L).set(0, 0, outputs.get(L).get(0, 0) + in);
+        double loss = labelWithError.loss(outputs.get(L) , target, deltas.get(L - 1));
+        if (cumGrad == null) {
+            return loss;
+        }
+        for (int i = L - 1; i >= 1; i--) {
+            layerModels.get(i).computePrevDelta(deltas.get(i), outputs.get(i), deltas.get(i - 1));
+        }
+        int offset = 0;
+        for (int i = 0; i < layerModels.size(); i++) {
+            DenseMatrix input = i == 0 ? data : outputs.get(i - 1);
+            if (i == layerModels.size() - 1) {
+                layerModels.get(i).grad(null, input, cumGrad, offset);
+            } else {
+                layerModels.get(i).grad(deltas.get(i), input, cumGrad, offset);
+            }
+            offset += layers.get(i).getWeightSize();
+        }
+        return loss;
+    }
 }

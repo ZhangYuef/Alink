@@ -172,7 +172,7 @@ public interface DeepFmTrainParams<T> extends
     ParamInfo<Double> DROPOUT_RATE = ParamInfoFactory
             .createParamInfo("dropoutRate", Double.class)
             .setDescription("Droput rate for MLP")
-            .setHasDefaultValue(0.5)
+            .setHasDefaultValue(0.)
             .build();
     default Double getDropoutRate() {
         return get(DROPOUT_RATE);

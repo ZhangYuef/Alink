@@ -2,6 +2,7 @@ package com.alibaba.alink.pipeline.recommendation;
 
 import java.util.function.Consumer;
 
+import com.alibaba.alink.common.MLEnvironmentFactory;
 import com.alibaba.alink.operator.batch.BatchOperator;
 import com.alibaba.alink.operator.batch.classification.FmClassifierTrainBatchOp;
 import com.alibaba.alink.operator.batch.dataproc.JsonValueBatchOp;
@@ -28,6 +29,8 @@ public class DeepFmTest {
 
     @Test
     public void testClassification() throws Exception {
+        MLEnvironmentFactory.getDefault().getExecutionEnvironment().setParallelism(1);
+
         BatchOperator trainData = new MemSourceBatchOp(
                 new Object[][] {
                         {"0:1.1 5:2.0", 1.0},
@@ -40,12 +43,14 @@ public class DeepFmTest {
         DeepFmClassifier adagrad = new DeepFmClassifier()
                 .setVectorCol("vec")
                 .setLabelCol("label")
-                .setNumEpochs(10)
+                .setWithLinearItem(false)
+                .setNumEpochs(100)
                 .setNumFactor(5)
                 .setInitStdev(0.01)
                 .setLearnRate(0.1)
                 .setEpsilon(0.0001)
-                .setLayers(new int[]{6, 5, 4})      // hidden layers' sizes
+                .setLayers(new int[]{10, 10, 10})      // hidden layers' sizes
+                .setDropoutRate(0.5)
                 .setPredictionCol("pred")
                 .setPredictionDetailCol("details")
                 .enableLazyPrintModelInfo();
